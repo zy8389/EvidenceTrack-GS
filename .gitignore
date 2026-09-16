@@ -1,35 +1,10 @@
-# Python and test artefacts
+*.pyc
 __pycache__/
-*.py[cod]
 .pytest_cache/
-.mypy_cache/
-
-# Local configuration and credentials
-.env
-.env.*
-*.pem
-*.key
-
-# Large research artefacts supplied or generated locally
-paper/
-data/
-datasets/
-outputs/
-runs/
-checkpoints/
-weights/
-cache/
-*.pt
-*.pth
-*.ckpt
-*.safetensors
-*.h5
-*.hdf5
-*.npz
-*.npy
-
-# OS/editor files
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
+.vscode
+output
+build
+diff_rasterization/diff_rast.egg-info
+diff_rasterization/dist
+.idea
+scripts

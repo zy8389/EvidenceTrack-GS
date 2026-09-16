@@ -1,0 +1,21 @@
+
+\begin{tikzpicture}[font=\sffamily\small,box/.style={draw=black!60,rounded corners=2pt,align=center,minimum height=10mm,text width=27mm,fill=black!3},arr/.style={-{Latex[length=2mm]},thick}]
+\node[box] (src) at (0,1.6) {Source RGB\\+ supplied cameras};
+\node[box] (trk) at (3.3,1.6) {Source identities\\anchors + quality};
+\node[box] (a0) at (6.6,1.6) {A0: repaired GS\\10k checkpoint};
+\node[box] (a1) at (10,2.4) {A1: source/track\\continue to 12k};
+\node[box] (self) at (10,.55) {SelfRender: same state\\A0-render pseudo RGB};
+\node[box] (b) at (10,-1.3) {B: same state\\Difix pseudo RGB};
+\node[box] (cache) at (6.6,-.35) {32 pseudo views\\A0 render / frozen Difix cache};
+\draw[arr] (src)--(trk);\draw[arr] (trk)--(a0);\draw[arr] (a0)--(a1);\draw[arr] (a0)--(self);\draw[arr] (a0)--(b);\draw[arr] (a0)--(cache);\draw[arr] (cache)--(self);\draw[arr] (cache)--(b);
+\node[box,fill=white] (held) at (0,-2.2) {Held-out RGB\\evaluation only};
+\node[box,text width=54mm,fill=white] (diag) at (5.2,-2.2) {Projection / GS / Difix / real reference\\correct identity vs. wrong identity};
+\node[box,fill=white] (report) at (10,-2.2) {Paired report\\failures + geometry};
+\draw[dashed,black!55] (-1.6,-1.15)--(11.7,-1.15);
+\draw[arr,dashed] (held)--(diag);\draw[arr,dashed] (trk.south) to[out=-100,in=90] (diag.north west);
+\draw[arr,dashed] (a1.east) to[out=0,in=80] (report.north);
+\draw[arr,dashed] (self.east) to[out=0,in=55] (report.north east);
+\draw[arr,dashed] (b.east) to[out=0,in=20] (report.east);
+\draw[arr,dashed] (diag)--(report);
+\node[font=\sffamily\scriptsize,anchor=east] at (11.7,-.95) {No held-out feedback into training};
+\end{tikzpicture}

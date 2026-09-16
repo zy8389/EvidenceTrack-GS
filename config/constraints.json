@@ -1,0 +1,48 @@
+{
+    "weighting": {
+      "texture_weight_min": 0.3,
+      "texture_weight_max": 2.0,
+      "texture_gradient_threshold": 100.0,
+      "confidence_decay_factor": 2.0,
+      "min_confidence_weight": 0.1,
+      "early_stage_weight": 0.01,
+      "mid_stage_weight": 0.05,
+      "final_stage_weight": 0.2,
+      "early_stage_iterations": 1000,
+      "mid_stage_iterations": 5000
+    },
+    "quality": {
+      "min_trajectory_length": 3,
+      "min_quality_score": 0.4,
+      "max_outlier_ratio": 0.3,
+      "length_weight": 0.2,
+      "visibility_weight": 0.3,
+      "consistency_weight": 0.3,
+      "stability_weight": 0.2,
+      "outlier_threshold_pixels": 2.0,
+      "ransac_threshold": 1.0,
+      "min_inlier_ratio": 0.7
+    },
+    "multiscale": {
+      "scales": [1.0, 0.5, 0.25],
+      "scale_weights": [0.5, 0.3, 0.2],
+      "consistency_threshold": 1.5,
+      "consistency_weight": 0.1,
+      "enable_scale_fallback": true,
+      "min_valid_scales": 1
+    },
+    "validation": {
+      "validation_interval": 100,
+      "constraint_satisfaction_threshold": 0.85,
+      "geometric_consistency_threshold": 0.9,
+      "generate_detailed_reports": true,
+      "save_validation_history": true,
+      "max_history_length": 1000
+    },
+    "device": "cuda",
+    "dtype": "float32",
+    "enable_debug_mode": false,
+    "batch_size": 1024,
+    "num_workers": 4,
+    "enable_parallel_processing": true
+  }

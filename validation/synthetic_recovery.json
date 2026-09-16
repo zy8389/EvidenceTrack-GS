@@ -1,7 +1,0 @@
-{
-  "initial_pixel_reprojection_error": 9.751101737106994,
-  "final_pixel_reprojection_error": 0.02762315034761743,
-  "initial_3d_anchor_distance": 0.05385164807134505,
-  "final_3d_anchor_distance": 0.000225919275158039,
-  "passed": true
-}

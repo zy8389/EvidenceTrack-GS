@@ -1,2 +1,21 @@
-# The delivery manifest verifies exact file bytes. Do not apply line-ending conversion.
-* -text
+* text=auto eol=lf
+
+*.py text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.jsonl text eol=lf
+*.txt text eol=lf
+*.csv text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+*.patch -text
+*.docx binary
+*.xlsx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ply binary
+*.pth binary
+*.pt binary

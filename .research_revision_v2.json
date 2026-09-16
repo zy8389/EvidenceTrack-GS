@@ -1,0 +1,10 @@
+{
+  "revision": "research-v2",
+  "integration_contract": "pre_ast_patch_plus_overlay_then_guarded_ast_v5",
+  "changed_files": [
+    "scene\\gaussian_model.py",
+    "train.py",
+    "gaussian_renderer\\__init__.py"
+  ],
+  "validation": "NOT RUN: assembly transformation only; CPU, CUDA, and end-to-end validation remain pending"
+}
