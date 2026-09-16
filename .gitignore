@@ -11,6 +11,7 @@ __pycache__/
 *.key
 
 # Large research artefacts supplied or generated locally
+paper/
 data/
 datasets/
 outputs/
