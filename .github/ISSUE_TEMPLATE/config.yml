@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Fern precheck and runbook
+    url: https://github.com/zy8389/EvidenceTrack-GS/blob/main/docs/FERN_PRECHECK_AND_RUN.md
+    about: Follow the fail-closed execution order before opening an experiment record.

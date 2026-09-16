@@ -1,0 +1,83 @@
+name: Controlled experiment record
+description: Record one attempted EvidenceTrack-GS server run and its fail-closed evidence.
+title: "[run] <dataset>/<scene>/seed-<n>/<stage>"
+labels:
+  - experiment
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Record every attempted run, including failures. Do not attach datasets, weights, checkpoints, generated images, or cache files. Attach only small reports, log excerpts, command versions, and SHA256 values.
+  - type: input
+    id: run_id
+    attributes:
+      label: Run ID
+      description: Use the preregistered ID from experiments/llff_primary_run_matrix.csv when applicable.
+      placeholder: LLFF_fern_v3_s1_A0
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Attempted stage
+      options:
+        - env
+        - tracks
+        - projection
+        - pseudo-live
+        - smoke
+        - A0
+        - A1
+        - SelfRender
+        - B
+        - pair audit
+        - identity diagnostic
+        - metrics/integrity
+    validations:
+      required: true
+  - type: textarea
+    id: immutable_inputs
+    attributes:
+      label: Immutable inputs and versions
+      description: Record upstream commit, package commit, dataset/scene/role/seed, source split hash, Track H5 hash, and parent A0 hash when applicable.
+      placeholder: |
+        upstream commit:
+        package commit:
+        dataset / scene / role / seed:
+        source split hash:
+        Track H5 hash:
+        parent A0 checkpoint hash:
+    validations:
+      required: true
+  - type: dropdown
+    id: gate_status
+    attributes:
+      label: Gate result
+      options:
+        - passed: true
+        - passed: false
+        - not reached
+    validations:
+      required: true
+  - type: textarea
+    id: reports
+    attributes:
+      label: Gate reports and final artifacts
+      description: List local or archived paths and SHA256 values for environment, Track, projection, pseudo, smoke, pair-audit, and final-checkpoint reports that were produced.
+      placeholder: |
+        environment_gate.json:
+        track_coverage.json:
+        camera_projection_equivalence.json:
+        pseudo gate:
+        smoke gate:
+        pair audit:
+        final checkpoint summary:
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome and next action
+      description: State the fail-closed reason on failure. On success, state the exact next permitted stage.
+    validations:
+      required: true
