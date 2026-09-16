@@ -8,12 +8,12 @@
 
 ## 当前状态
 
-本仓库目前处于 **pre-experiment research implementation** 阶段。受控实验协议与 CPU 侧完整性验证已经完成，但决定论文结论的真实场景 GPU 实验尚未执行。
+本仓库目前处于 **pre-experiment research implementation** 阶段。受控实验协议与 CPU 侧完整性检查已经实现，但当前源码的 CPU 验证尚未全部通过，决定论文结论的真实场景 GPU 实验也尚未执行。
 
 | 模块 | 状态 |
 | --- | --- |
-| Phase-2.1 CPU smoke | ✅ 11 / 11 |
-| Regression tests | ✅ 79 / 79 |
+| Phase-2.1 CPU smoke | 失败：Difix cache 元数据门禁 |
+| Regression tests | 76 / 79 通过，3 项失败 |
 | 三相机合成恢复 | ✅ 通过 |
 | Fern CUDA preflight | ⏳ 未运行 |
 | A0 / A1 / SelfRender / B | ⏳ 未运行 |
@@ -21,7 +21,7 @@
 | DINOv2 identity diagnostic | ⏳ 未运行 |
 | DTU 独立几何评估 | ⏳ 未运行 |
 
-当前修复版对应的 CPU 验证日志位于 `code/validation/repair_*`。根目录 `validation/` 中的文件保留为历史快照，不应单独用于证明当前源码已经通过验证。
+当前仓库源码已于 2026-09-16 重跑 CPU 检查，日志、合成恢复结果与源码哈希位于 `code/validation/readme_update_*`。更新包中的 11/11 smoke 与 79/79 regression 日志对应另一个修复快照，不能用于证明当前版本通过。根目录 `validation/` 中的文件也仅作为历史快照保留。
 
 ## 研究动机
 
@@ -104,11 +104,11 @@ pip install -r requirements-cpu.txt
 bash scripts/run_cpu.sh
 ```
 
-当前 repaired snapshot 已实际通过：
+当前仓库源码在 2026-09-16 的实测结果为：
 
 ```text
-Phase-2.1 smoke:        11 / 11
-Pytest regression:      79 / 79
+Phase-2.1 smoke:        FAIL (Difix cache metadata guard)
+Pytest regression:      76 passed / 3 failed
 Synthetic recovery:     PASS
 ```
 
@@ -119,7 +119,9 @@ Mean reprojection error: 9.7511 px → 0.0276 px
 3D anchor distance:      0.053852  → 0.000226
 ```
 
-这些结果只证明 CPU fixture、provenance guard 和局部几何机制按预期工作，**不能代替真实 Fern、CUDA rasterizer、Difix、DINOv2 或 DTU 实验。**
+Smoke fixture 缺少 `manifest_schema` 与 `reproducibility_check_sha256`；回归失败涉及 DINOv2 元数据（2 项）和相机矩阵不一致检测（1 项）。本次 README 更新不修改研究源码，也不修复这些失败。
+
+由于 `run_cpu.sh` 在首个失败门禁处停止，回归与合成恢复检查还分别单独运行。本轮只有合成恢复检查完整通过，当前源码的 CPU 完整性验证仍未全部通过。**这些结果不能代替真实 Fern、CUDA rasterizer、Difix、DINOv2 或 DTU 实验。**
 
 ## 第一组真实实验
 
@@ -172,7 +174,8 @@ code/          研究源码、协议、工具、测试与脚本
 experiments/   预注册实验矩阵与实测结果模板
 docs/          实验说明与 Fern server runbook
 validation/    历史 CPU 验证快照
-audit/         内部 provenance / audit 材料
 ```
 
 执行与装配说明见 `code/README.md`。
+
+`SHA256SUMS.txt` 记录除清单自身以外的所有 Git 跟踪文件的精确字节。在 POSIX shell 中可用 `sha256sum -c SHA256SUMS.txt` 校验。

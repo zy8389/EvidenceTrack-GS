@@ -1,0 +1,18 @@
+[Strict Track Association] Active Tracks: 3
+[Strict Track Association] Associated Tracks: 3
+[Strict Track Association] Unique Associated Gaussians: 2
+[Strict Track Association] Association Collision Rate: 0.3333333333333333
+[Strict Track Association] Mean Association Distance: 0.0003333333588670939
+[Strict Track Association] P95 Association Distance: 0.0009000000427477062
+[Strict Track Association] Rejected Associations: 0
+[Strict Track Association] WARNING: collision rate is high. Report it before considering unique assignment, a stricter distance threshold, or best-quality track filtering. Hungarian matching is not enabled in Phase 2.1.
+Traceback (most recent call last):
+  File "F:\3DGS\GeoTrack_Diffusion_Research_Package\code\tools\smoke_test_phase2_1.py", line 608, in <module>
+    main()
+  File "F:\3DGS\GeoTrack_Diffusion_Research_Package\code\tools\smoke_test_phase2_1.py", line 586, in main
+    test_evidence_end_to_end(root)
+  File "F:\3DGS\GeoTrack_Diffusion_Research_Package\code\tools\smoke_test_phase2_1.py", line 505, in test_evidence_end_to_end
+    run_metadata["cache_run_fingerprint"] = cache_run_fingerprint(run_metadata)
+  File "F:\3DGS\GeoTrack_Diffusion_Research_Package\code\diffusion_guidance\difix_provenance.py", line 76, in cache_run_fingerprint
+    raise ValueError(f"Incomplete Difix cache identity: missing {missing}")
+ValueError: Incomplete Difix cache identity: missing ['manifest_schema', 'reproducibility_check_sha256']
