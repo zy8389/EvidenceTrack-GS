@@ -228,10 +228,10 @@ The aggregator rejects rows whose dataset/scene/seed `pair_id` lacks its own pas
 
 ## Current verification boundary
 
-As of this repair, the following are **NOT VERIFIED**:
+As of 2026-09-17, the regenerated cumulative patch passed both apply checks (including `--whitespace=error-all`) and `git diff --check`. Two independent fresh bootstrap assemblies completed successfully with zero byte mismatches across 66 target files. The fresh assembled tree passed compileall, 79/79 pytest checks, 11/11 CPU smoke checks, and synthetic recovery. Evidence is stored in `code/validation/clean_assembly_*_2026-09-17.*`.
 
-- current repaired-source CPU smoke, pytest, and synthetic recovery; tests were not run at the user's request;
-- fresh bootstrap assembly of the final cumulative patch;
+The following are still **NOT VERIFIED**:
+
 - CUDA extension import and live renderer integration;
 - real Fern Track, projection, pseudo-camera, geometry-smoke, A0, and recovery gates;
 - real Difix cache/reproducibility and target-sidecar validation;
@@ -240,4 +240,4 @@ As of this repair, the following are **NOT VERIFIED**:
 - confirmatory six-scene statistics and independent DTU geometry evaluation;
 - runtime, peak GPU memory, and final reconstruction metrics.
 
-The packaged 11-smoke/23-pytest/synthetic logs are historical records for an earlier source snapshot. They cannot be cited as validation of the repaired source. A positive B-A1 metric does not isolate the Difix-target replacement, while a positive B-SelfRender metric still does not establish a diffusion-specific mechanism or improved geometry without the planned enhancement control and independent geometry evidence. A passed GPU smoke proves only that the recovery mechanism works under its tested perturbations.
+Older root-level validation files and `code/validation/readme_update_*` are historical snapshots and must not be cited as validation of this revision. A positive B-A1 metric does not isolate the Difix-target replacement, while a positive B-SelfRender metric still does not establish a diffusion-specific mechanism or improved geometry without the planned enhancement control and independent geometry evidence. A passed GPU smoke proves only that the recovery mechanism works under its tested perturbations.

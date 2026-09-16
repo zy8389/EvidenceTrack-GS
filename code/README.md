@@ -2,17 +2,18 @@
 
 This directory contains the complete research changes for the pinned GeoTrack-GS revision, not an offline copy of upstream. See the accompanying Chinese tutorial.
 
-CPU checks: `pip install -r requirements-cpu.txt` then `bash scripts/run_cpu.sh`. Current-source checks were rerun on 2026-09-16: **Phase-2.1 smoke failed at the Difix cache metadata guard; pytest reported 76 passed and 3 failed; synthetic three-camera recovery passed**. Logs, synthetic results, and exact source hashes are stored under `code/validation/readme_update_*`. The supplied profile bundle's 11/11 and 79/79 repaired-snapshot results do not certify this revision. The three regression failures cover DINOv2 metadata (two tests) and camera-matrix mismatch detection (one test). `run_cpu.sh` stops on the first failure, so regression and synthetic checks were also run independently. This documentation update does not repair or modify research source code. Current-source CPU integrity validation is not fully passing; the full CUDA installation, real Fern reconstruction, real Difix/DINOv2 inference, and independent geometry evaluation remain `NOT VERIFIED`.
+CPU checks: `pip install -r requirements-cpu.txt` then `bash scripts/run_cpu.sh`. On 2026-09-17, a fresh assembled tree passed compileall, **11/11 Phase-2.1 smoke checks, 79/79 pytest checks, and synthetic three-camera recovery**. The cumulative patch also passed `git apply --check`, `git apply --cached --check --whitespace=error-all`, and `git diff --check`. Two independent bootstrap runs matched byte-for-byte across 66 target files, and all 57 overlay files matched this package. Evidence is stored under `validation/clean_assembly_*_2026-09-17.*`. The full CUDA installation, real Fern reconstruction, real Difix/DINOv2 inference, and independent geometry evaluation remain `NOT VERIFIED`.
 
 Full assembly: `bash scripts/bootstrap.sh /absolute/new/GeoTrack-GS-research-v2`. The destination must not exist. The upstream commit is `81ada6a32c918591ae7c7a0279dc6ca7a8018e2f`. Assembly has one fixed order: apply the cumulative **pre-AST** patch, copy the source overlay, then run the guarded AST integration only on upstream-owned files. The overlay itself owns the calibrated tools, so it is not structurally rewritten a second time. Bootstrap deliberately does **not** run compile, CPU, CUDA, or environment checks; begin the documented gate sequence explicitly. Do not stack old Phase 2/2.1 patches.
 
-When the cumulative patch must be regenerated from a fresh pinned checkout, place `--output` before the `--` path separator so Git actually writes the file:
+When the cumulative patch must be regenerated, start from a fresh pinned checkout with `core.autocrlf=false`, materialize the intended source, and explicitly remove the unwanted upstream file before generating the patch. Place `--output` before the `--` path separator so Git actually writes the file:
 
 ```bash
-git diff --binary --output=/absolute/path/phase2_1_integrity.patch -- . ':(exclude)geometric_constraints/adaptive_weighting.py'
+rm -- geometric_constraints/adaptive_weighting.py
+git diff --binary --output=/absolute/path/phase2_1_integrity.patch -- .
 ```
 
-`geometric_constraints/adaptive_weighting.py` is an unrelated upstream legacy edit and must remain excluded from the controlled patch. Regenerate only from a fresh checkout at the pinned commit, before AST integration; a patch made from an assembled checkout is intentionally rejected by the integration guard.
+`geometric_constraints/adaptive_weighting.py` is unrelated upstream legacy code and the cumulative patch must record its deletion so it is absent from the assembled tree. Regenerate only from a fresh checkout at the pinned commit, before AST integration; a patch made from an assembled checkout is intentionally rejected by the integration guard.
 
 After installing the upstream CUDA environment and its own modified extensions, run `research_scripts/run_stage.sh` from the assembled root and follow `research_docs/FERN_PRECHECK_AND_RUN.md`. The enforced pre-A0 order is environment -> source-track build/audit -> H5/live-Scene projection gate -> live pseudo-camera audit -> CUDA geometry smoke. Projection needs the H5 anchors, so it cannot execute before Track construction. Data and model weights must be provided separately. The installer/real CUDA end-to-end workflow remains `NOT VERIFIED`.
 

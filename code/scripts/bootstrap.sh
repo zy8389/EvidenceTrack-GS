@@ -7,6 +7,7 @@ DEST=${1:?Usage: bash scripts/bootstrap.sh /absolute/new/GeoTrack-GS}
 REF=81ada6a32c918591ae7c7a0279dc6ca7a8018e2f
 [[ ! -e "$DEST" ]] || { echo 'Destination must not exist. Your existing work is never overwritten.' >&2; exit 2; }
 git clone --no-checkout https://github.com/CPy255/GeoTrack-GS.git "$DEST"
+git -C "$DEST" config core.autocrlf false
 git -C "$DEST" checkout --detach "$REF"
 [[ "$(git -C "$DEST" rev-parse HEAD)" == "$REF" ]] || {
   echo 'Pinned upstream checkout did not resolve to the required commit.' >&2

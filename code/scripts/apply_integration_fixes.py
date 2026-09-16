@@ -102,6 +102,7 @@ def fix_training(source):
         lines=result.splitlines(keepends=True)
         lines[fn.end_lineno:fn.end_lineno]=['\n    with open(os.path.join(scene.model_path, "real_view_sequence.json"), "w", encoding="utf-8") as handle:\n        json.dump(real_view_audit, handle)\n']
         result=''.join(lines)
+    result='\n'.join(line.rstrip(' \t') for line in result.split('\n'))
     ast.parse(result);return result
 
 
@@ -124,6 +125,44 @@ def calibrate_scenes(source):
 
 def validate_pre_ast_training(source):
     """The real package must have every anchor; unit fixtures need not."""
+    tree=ast.parse(source)
+    functions=[
+        node for node in tree.body
+        if isinstance(node,ast.FunctionDef) and node.name=='training'
+    ]
+    if len(functions)!=1:
+        raise RuntimeError('Expected exactly one top-level training() function')
+    training=functions[0]
+
+    def calls(node, function_name):
+        return any(
+            isinstance(candidate,ast.Call)
+            and ast.unparse(candidate.func)==function_name
+            for candidate in ast.walk(node)
+        )
+
+    source_names_bound=any(
+        isinstance(node,(ast.Assign,ast.AnnAssign))
+        and any(
+            isinstance(target,ast.Name) and target.id=='source_camera_names'
+            for target in (
+                node.targets if isinstance(node,ast.Assign) else [node.target]
+            )
+        )
+        and calls(node.value,'normalized_camera_names')
+        for node in ast.walk(training)
+    )
+    track_path_bound=any(
+        isinstance(node,ast.Dict)
+        and any(
+            isinstance(key,ast.Constant)
+            and key.value=='track_h5_path'
+            and calls(value,'os.path.realpath')
+            for key,value in zip(node.keys,node.values)
+            if key is not None
+        )
+        for node in ast.walk(training)
+    )
     required=(
         'if iteration < opt.iterations:',
         'prepare_output_and_logger(dataset)',
@@ -146,8 +185,6 @@ def validate_pre_ast_training(source):
         'def _live_cuda_renderer_probe(',
         '"pseudo_rgb_start": int(opt.pseudo_rgb_start)',
         '"pseudo_rgb_end": int(opt.pseudo_rgb_end)',
-        '"track_h5_path": os.path.realpath(args.track_path)',
-        'source_camera_names = normalized_camera_names(',
         '"source_image_inventory_sha256": (',
         '"source_training_camera_inventory_sha256": (',
         '"controlled_training_protocol_sha256": (',
@@ -164,6 +201,10 @@ def validate_pre_ast_training(source):
         '"densification_state_restored": bool(getattr(',
     )
     missing=[anchor for anchor in required_research_contract if anchor not in source]
+    if not track_path_bound:
+        missing.append('track_h5_path bound through os.path.realpath')
+    if not source_names_bound:
+        missing.append('source_camera_names bound through normalized_camera_names')
     if missing:
         raise RuntimeError(
             'Cumulative patch lacks the final controlled-run evidence contract: '
@@ -253,9 +294,19 @@ def validate_overlay_contract(root):
         '"a1_checkpoint_controlled_provenance_sha256"',
         '"b_checkpoint_controlled_provenance_sha256"',
         '"paired_identity_manifest_metadata_v4"',
+        'def dinov2_protocol_from_metadata(',
     ):
         if anchor not in evidence:
             raise RuntimeError(f'Evidence overlay lacks paired provenance contract: {anchor}')
+    projection=(
+        root/'tools/check_camera_projection_equivalence.py'
+    ).read_text(encoding='utf-8')
+    for anchor in (
+        'expected_homogeneous_row',
+        '"homogeneous_row_max_abs_difference"',
+    ):
+        if anchor not in projection:
+            raise RuntimeError(f'Projection gate lacks affine-matrix contract: {anchor}')
     paired_manifest=(
         root/'tools/make_paired_identity_manifest.py'
     ).read_text(encoding='utf-8')
@@ -332,11 +383,29 @@ def main():
         raise RuntimeError('test_geometry_recovery.py must contain exactly one overlay-owned calibration call')
     if 'strict_source_only_geometry' not in text:
         raise RuntimeError('test_geometry_recovery.py lacks its strict source-only gate')
-    if text.count('torch.load(args.checkpoint)')==1 and 'torch.load(args.checkpoint, weights_only=False)' not in text:
-        text=text.replace('torch.load(args.checkpoint)','torch.load(args.checkpoint, weights_only=False)',1)
-    elif text.count('torch.load(args.checkpoint, weights_only=False)')!=1:
+    recovery_tree=ast.parse(text)
+    checkpoint_loads=[
+        node for node in ast.walk(recovery_tree)
+        if isinstance(node,ast.Call) and ast.unparse(node.func)=='torch.load'
+    ]
+    if len(checkpoint_loads)!=1:
         raise RuntimeError('Unexpected recovery checkpoint-load structure')
-    edits[path]=text
+    checkpoint_load=checkpoint_loads[0]
+    checkpoint_source=(
+        ast.unparse(checkpoint_load.args[0]) if checkpoint_load.args else ''
+    )
+    weights_only=[
+        keyword.value for keyword in checkpoint_load.keywords
+        if keyword.arg=='weights_only'
+    ]
+    if (
+        checkpoint_source not in {'args.checkpoint','checkpoint_path'}
+        or len(weights_only)!=1
+        or not isinstance(weights_only[0],ast.Constant)
+        or weights_only[0].value is not False
+    ):
+        raise RuntimeError('Recovery checkpoint load must explicitly use weights_only=False')
+    ast.parse(text)
     for path,text in edits.items():ast.parse(text)
     # Build and parse the full plan before mutation so a source-structure
     # failure occurs before any integration target is changed.
@@ -344,13 +413,16 @@ def main():
     try:
         for path,text in edits.items():
             temporary=path.with_name(path.name+'.research-v2.tmp')
-            temporary.write_text(text, encoding='utf-8')
+            with temporary.open('w',encoding='utf-8',newline='\n') as handle:
+                handle.write(text)
             temporaries.append((temporary,path))
         for temporary,path in temporaries:os.replace(temporary,path)
-        marker.write_text(json.dumps({'revision':'research-v2',
-                                     'integration_contract':'pre_ast_patch_plus_overlay_then_guarded_ast_v5',
-                                     'changed_files':[str(p.relative_to(r)) for p in edits],
-                                     'validation':'NOT RUN: assembly transformation only; CPU, CUDA, and end-to-end validation remain pending'},indent=2)+'\n', encoding='utf-8')
+        marker_payload=json.dumps({'revision':'research-v2',
+                                  'integration_contract':'pre_ast_patch_plus_overlay_then_guarded_ast_v5',
+                                  'changed_files':[str(p.relative_to(r)) for p in edits],
+                                  'validation':'NOT RUN: assembly transformation only; CPU, CUDA, and end-to-end validation remain pending'},indent=2)+'\n'
+        with marker.open('w',encoding='utf-8',newline='\n') as handle:
+            handle.write(marker_payload)
     finally:
         for temporary,_ in temporaries:
             if temporary.exists():temporary.unlink()

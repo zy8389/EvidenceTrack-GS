@@ -8,12 +8,14 @@
 
 ## 当前状态
 
-本仓库目前处于 **pre-experiment research implementation** 阶段。受控实验协议与 CPU 侧完整性检查已经实现，但当前源码的 CPU 验证尚未全部通过，决定论文结论的真实场景 GPU 实验也尚未执行。
+本仓库目前处于 **pre-experiment research implementation** 阶段。固定 upstream、累计补丁、覆盖层和受保护 AST 集成已经完成全新装配验证，CPU 侧完整性检查全部通过；决定论文结论的真实场景 GPU 实验仍未执行。
 
 | 模块 | 状态 |
 | --- | --- |
-| Phase-2.1 CPU smoke | 失败：Difix cache 元数据门禁 |
-| Regression tests | 76 / 79 通过，3 项失败 |
+| Clean reproducible assembly | ✅ 两次全新装配，66 个目标文件 0 字节差异 |
+| Patch gates | ✅ apply / cached whitespace / diff check 全部通过 |
+| Phase-2.1 CPU smoke | ✅ 11 / 11 通过 |
+| Regression tests | ✅ 79 / 79 通过 |
 | 三相机合成恢复 | ✅ 通过 |
 | Fern CUDA preflight | ⏳ 未运行 |
 | A0 / A1 / SelfRender / B | ⏳ 未运行 |
@@ -21,7 +23,7 @@
 | DINOv2 identity diagnostic | ⏳ 未运行 |
 | DTU 独立几何评估 | ⏳ 未运行 |
 
-当前仓库源码已于 2026-09-16 重跑 CPU 检查，日志、合成恢复结果与源码哈希位于 `code/validation/readme_update_*`。更新包中的 11/11 smoke 与 79/79 regression 日志对应另一个修复快照，不能用于证明当前版本通过。根目录 `validation/` 中的文件也仅作为历史快照保留。
+本轮验证于 2026-09-17 在固定 upstream commit `81ada6a32c918591ae7c7a0279dc6ca7a8018e2f` 的全新装配树上执行。机器可读报告、日志和合成恢复结果位于 `code/validation/clean_assembly_*_2026-09-17.*`。根目录 `validation/` 与 `code/validation/readme_update_*` 仅作为历史快照保留。
 
 ## 研究动机
 
@@ -104,11 +106,15 @@ pip install -r requirements-cpu.txt
 bash scripts/run_cpu.sh
 ```
 
-当前仓库源码在 2026-09-16 的实测结果为：
+2026-09-17 在全新 `bootstrap.sh` 装配树上的实测结果为：
 
 ```text
-Phase-2.1 smoke:        FAIL (Difix cache metadata guard)
-Pytest regression:      76 passed / 3 failed
+Patch apply gates:      PASS
+Fresh bootstrap:        PASS (2 independent runs)
+Byte comparison:        PASS (0 mismatches)
+Compileall:             PASS
+Phase-2.1 smoke:        11 / 11 passed
+Pytest regression:      79 / 79 passed
 Synthetic recovery:     PASS
 ```
 
@@ -119,9 +125,7 @@ Mean reprojection error: 9.7511 px → 0.0276 px
 3D anchor distance:      0.053852  → 0.000226
 ```
 
-Smoke fixture 缺少 `manifest_schema` 与 `reproducibility_check_sha256`；回归失败涉及 DINOv2 元数据（2 项）和相机矩阵不一致检测（1 项）。本次 README 更新不修改研究源码，也不修复这些失败。
-
-由于 `run_cpu.sh` 在首个失败门禁处停止，回归与合成恢复检查还分别单独运行。本轮只有合成恢复检查完整通过，当前源码的 CPU 完整性验证仍未全部通过。**这些结果不能代替真实 Fern、CUDA rasterizer、Difix、DINOv2 或 DTU 实验。**
+累计补丁从全新 checkout 重新生成，没有复用旧补丁；它显式删除 upstream 的 `geometric_constraints/adaptive_weighting.py`。两次独立装配的 66 个目标文件逐字节一致，57 个覆盖层文件与当前包逐字节一致。**这些结果证明源码可重建和 CPU 完整性门禁通过，但不能代替真实 Fern、CUDA rasterizer、Difix、DINOv2 或 DTU 实验。**
 
 ## 第一组真实实验
 

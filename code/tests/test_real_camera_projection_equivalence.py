@@ -84,4 +84,4 @@ def test_matrix_mismatch_fails_equivalence_record():
     points = torch.tensor([[0.2, -0.1, 2.0]], dtype=torch.float64)
     records = compare_camera(points, camera, k, tolerance=1e-8, matrix_tolerance=1e-8)
     assert not records[0]["passed"]
-    assert records[0]["translation_max_abs_difference"] > 1e-8
+    assert records[0]["homogeneous_row_max_abs_difference"] > 1e-8

@@ -156,6 +156,53 @@ def validate_hard_negative_radius(primary_radius: float, hard_negative_radius: f
     return hard_radius
 
 
+def dinov2_protocol_from_metadata(metadata: Mapping[str, Any]) -> dict:
+    """Validate and canonicalize the immutable DINOv2 identity fields."""
+    provenance = metadata.get("extractor_provenance")
+    if not isinstance(provenance, Mapping):
+        raise ValueError("extractor_provenance must be an object")
+    if str(metadata.get("feature_backend", "")) != "dinov2":
+        raise ValueError("DINOv2 provenance requires feature_backend=dinov2")
+    dino_fields = (
+        "backend",
+        "local_repository_path",
+        "repository_commit",
+        "pretrained_weight_path",
+        "pretrained_weight_sha256",
+        "weight_loading",
+    )
+    missing = [field for field in dino_fields if not provenance.get(field)]
+    if missing:
+        raise ValueError(f"Incomplete DINOv2 provenance: missing {missing}")
+    model = metadata.get("dinov2_model")
+    if not model or provenance["backend"] != f"dinov2:{model}":
+        raise ValueError("DINOv2 model name and extractor backend identity disagree")
+    if re.fullmatch(r"[0-9a-fA-F]{40,64}", str(provenance["repository_commit"])) is None:
+        raise ValueError("DINOv2 repository_commit must be a full hexadecimal commit")
+    if re.fullmatch(r"[0-9a-fA-F]{64}", str(provenance["pretrained_weight_sha256"])) is None:
+        raise ValueError("DINOv2 pretrained_weight_sha256 must be a SHA256 digest")
+    if provenance["weight_loading"] != "explicit_local_state_dict":
+        raise ValueError("DINOv2 weights must come from an explicit local state dict")
+    repository = Path(str(provenance["local_repository_path"])).expanduser().resolve()
+    if not repository.is_dir() or not (repository / "hubconf.py").is_file():
+        raise ValueError("DINOv2 local repository is missing or invalid")
+    weights = _require_bound_file(
+        provenance["pretrained_weight_path"],
+        provenance["pretrained_weight_sha256"],
+        "DINOv2 pretrained weights",
+    )
+    return {
+        "feature_backend_identity": str(provenance["backend"]),
+        "dinov2_model": str(model),
+        "dinov2_local_repository_path": str(repository),
+        "dinov2_repository_commit": str(provenance["repository_commit"]),
+        "dinov2_pretrained_weight_path": str(weights),
+        "dinov2_pretrained_weight_sha256": str(
+            provenance["pretrained_weight_sha256"]
+        ),
+    }
+
+
 def identity_protocol_from_metadata(metadata: Mapping[str, Any], radius: float) -> dict:
     """Extract the comparison-critical protocol and reject incomplete DINO metadata."""
     required = (
@@ -483,45 +530,7 @@ def identity_protocol_from_metadata(metadata: Mapping[str, Any], radius: float) 
                 f"Identity metadata {prefix.upper()} checkpoint/Scene PLY binding is invalid"
             )
     if backend == "dinov2":
-        dino_fields = (
-            "backend",
-            "local_repository_path",
-            "repository_commit",
-            "pretrained_weight_path",
-            "pretrained_weight_sha256",
-            "weight_loading",
-        )
-        missing = [field for field in dino_fields if not provenance.get(field)]
-        if missing:
-            raise ValueError(f"Incomplete DINOv2 provenance: missing {missing}")
-        model = metadata.get("dinov2_model")
-        if not model or provenance["backend"] != f"dinov2:{model}":
-            raise ValueError("DINOv2 model name and extractor backend identity disagree")
-        if re.fullmatch(r"[0-9a-fA-F]{40,64}", str(provenance["repository_commit"])) is None:
-            raise ValueError("DINOv2 repository_commit must be a full hexadecimal commit")
-        if re.fullmatch(r"[0-9a-fA-F]{64}", str(provenance["pretrained_weight_sha256"])) is None:
-            raise ValueError("DINOv2 pretrained_weight_sha256 must be a SHA256 digest")
-        if provenance["weight_loading"] != "explicit_local_state_dict":
-            raise ValueError("DINOv2 weights must come from an explicit local state dict")
-        repository = Path(str(provenance["local_repository_path"])).expanduser().resolve()
-        if not repository.is_dir() or not (repository / "hubconf.py").is_file():
-            raise ValueError("DINOv2 local repository is missing or invalid")
-        weights = _require_bound_file(
-            provenance["pretrained_weight_path"],
-            provenance["pretrained_weight_sha256"],
-            "DINOv2 pretrained weights",
-        )
-        protocol.update(
-            {
-                "dinov2_model": str(model),
-                "dinov2_local_repository_path": str(repository),
-                "dinov2_repository_commit": str(provenance["repository_commit"]),
-                "dinov2_pretrained_weight_path": str(weights),
-                "dinov2_pretrained_weight_sha256": str(
-                    provenance["pretrained_weight_sha256"]
-                ),
-            }
-        )
+        protocol.update(dinov2_protocol_from_metadata(metadata))
     elif backend == "rgb":
         if provenance.get("backend") != "rgb" or provenance.get("weight_loading") != "none":
             raise ValueError("RGB backend provenance is inconsistent")

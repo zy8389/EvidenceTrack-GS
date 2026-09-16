@@ -8,12 +8,14 @@
 
 ## Status
 
-This repository is a **pre-experiment research implementation**. The controlled protocol and CPU-side integrity checks are implemented, but current-source CPU validation is not fully passing and the decisive real-scene GPU experiments have not yet been executed.
+This repository is a **pre-experiment research implementation**. Clean assembly from the pinned upstream, cumulative patch, overlay, and guarded AST integration is verified, and all CPU-side integrity checks pass. The decisive real-scene GPU experiments have not yet been executed.
 
 | Component | Status |
 | --- | --- |
-| Phase-2.1 CPU smoke checks | Failed: Difix cache metadata guard |
-| Regression tests | 76 / 79 passed; 3 failed |
+| Clean reproducible assembly | Passed: two fresh builds, 0 byte mismatches across 66 target files |
+| Patch gates | Passed: apply, cached whitespace, and diff checks |
+| Phase-2.1 CPU smoke checks | 11 / 11 passed |
+| Regression tests | 79 / 79 passed |
 | Synthetic three-camera recovery | ✅ Passed |
 | Fern CUDA preflight | ⏳ Not run |
 | A0 / A1 / SelfRender / B reconstruction | ⏳ Not run |
@@ -21,7 +23,7 @@ This repository is a **pre-experiment research implementation**. The controlled 
 | DINOv2 identity diagnostic | ⏳ Not run |
 | DTU independent geometry evaluation | ⏳ Not run |
 
-Current-source CPU validation was rerun on 2026-09-16. Logs, synthetic results, and source hashes are stored under `code/validation/readme_update_*`. The supplied profile bundle's 11/11 smoke and 79/79 regression results belong to a different repaired-source snapshot and do not certify this revision. Older files under the root `validation/` directory are also historical snapshots.
+Validation was run on 2026-09-17 in a fresh tree assembled from upstream commit `81ada6a32c918591ae7c7a0279dc6ca7a8018e2f`. The machine-readable report, logs, and synthetic result are stored under `code/validation/clean_assembly_*_2026-09-17.*`. Root-level `validation/` files and `code/validation/readme_update_*` remain historical snapshots.
 
 ## Research idea
 
@@ -123,17 +125,19 @@ pip install -r requirements-cpu.txt
 bash scripts/run_cpu.sh
 ```
 
-The current repository source was checked on 2026-09-16 with these results:
+The fresh `bootstrap.sh` assembly was checked on 2026-09-17 with these results:
 
 ```text
-Phase-2.1 smoke:        FAIL (Difix cache metadata guard)
-Pytest regression:      76 passed / 3 failed
+Patch apply gates:      PASS
+Fresh bootstrap:        PASS (2 independent runs)
+Byte comparison:        PASS (0 mismatches)
+Compileall:             PASS
+Phase-2.1 smoke:        11 / 11 passed
+Pytest regression:      79 / 79 passed
 Synthetic recovery:     PASS
 ```
 
-The smoke fixture is missing `manifest_schema` and `reproducibility_check_sha256`. The three regression failures cover DINOv2 metadata (two tests) and camera-matrix mismatch detection (one test). This documentation update does not change research source code or repair those failures.
-
-Because `run_cpu.sh` stops at the first failed gate, the regression and synthetic checks were also run independently. Only the synthetic point-recovery check passed in full; current-source CPU integrity validation remains incomplete. These results are **not** evidence that the real CUDA reconstruction, Difix model, DINOv2 diagnostic, or benchmark geometry pipeline works end-to-end.
+The cumulative patch was regenerated from a fresh checkout without reusing the saved patch and explicitly deletes upstream `geometric_constraints/adaptive_weighting.py`. Two independent assemblies matched byte-for-byte across 66 target files, and all 57 overlay files matched the package. These results verify source reconstruction and CPU integrity; they are **not** evidence that the real CUDA reconstruction, Difix model, DINOv2 diagnostic, or benchmark geometry pipeline works end-to-end.
 
 ## Fern GPU preflight
 

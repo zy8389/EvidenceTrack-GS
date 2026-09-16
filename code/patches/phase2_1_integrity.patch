@@ -2566,10 +2566,10 @@ index 0000000..221ad45
 +    )
 diff --git a/diffusion_guidance/evidence_protocol.py b/diffusion_guidance/evidence_protocol.py
 new file mode 100644
-index 0000000..33517ab
+index 0000000..add5350
 --- /dev/null
 +++ b/diffusion_guidance/evidence_protocol.py
-@@ -0,0 +1,530 @@
+@@ -0,0 +1,539 @@
 +"""Pure validation helpers for the preregistered identity protocol."""
 +
 +from __future__ import annotations
@@ -2726,6 +2726,53 @@ index 0000000..33517ab
 +            "window uses its own radius for local-negative selection"
 +        )
 +    return hard_radius
++
++
++def dinov2_protocol_from_metadata(metadata: Mapping[str, Any]) -> dict:
++    """Validate and canonicalize the immutable DINOv2 identity fields."""
++    provenance = metadata.get("extractor_provenance")
++    if not isinstance(provenance, Mapping):
++        raise ValueError("extractor_provenance must be an object")
++    if str(metadata.get("feature_backend", "")) != "dinov2":
++        raise ValueError("DINOv2 provenance requires feature_backend=dinov2")
++    dino_fields = (
++        "backend",
++        "local_repository_path",
++        "repository_commit",
++        "pretrained_weight_path",
++        "pretrained_weight_sha256",
++        "weight_loading",
++    )
++    missing = [field for field in dino_fields if not provenance.get(field)]
++    if missing:
++        raise ValueError(f"Incomplete DINOv2 provenance: missing {missing}")
++    model = metadata.get("dinov2_model")
++    if not model or provenance["backend"] != f"dinov2:{model}":
++        raise ValueError("DINOv2 model name and extractor backend identity disagree")
++    if re.fullmatch(r"[0-9a-fA-F]{40,64}", str(provenance["repository_commit"])) is None:
++        raise ValueError("DINOv2 repository_commit must be a full hexadecimal commit")
++    if re.fullmatch(r"[0-9a-fA-F]{64}", str(provenance["pretrained_weight_sha256"])) is None:
++        raise ValueError("DINOv2 pretrained_weight_sha256 must be a SHA256 digest")
++    if provenance["weight_loading"] != "explicit_local_state_dict":
++        raise ValueError("DINOv2 weights must come from an explicit local state dict")
++    repository = Path(str(provenance["local_repository_path"])).expanduser().resolve()
++    if not repository.is_dir() or not (repository / "hubconf.py").is_file():
++        raise ValueError("DINOv2 local repository is missing or invalid")
++    weights = _require_bound_file(
++        provenance["pretrained_weight_path"],
++        provenance["pretrained_weight_sha256"],
++        "DINOv2 pretrained weights",
++    )
++    return {
++        "feature_backend_identity": str(provenance["backend"]),
++        "dinov2_model": str(model),
++        "dinov2_local_repository_path": str(repository),
++        "dinov2_repository_commit": str(provenance["repository_commit"]),
++        "dinov2_pretrained_weight_path": str(weights),
++        "dinov2_pretrained_weight_sha256": str(
++            provenance["pretrained_weight_sha256"]
++        ),
++    }
 +
 +
 +def identity_protocol_from_metadata(metadata: Mapping[str, Any], radius: float) -> dict:
@@ -3055,45 +3102,7 @@ index 0000000..33517ab
 +                f"Identity metadata {prefix.upper()} checkpoint/Scene PLY binding is invalid"
 +            )
 +    if backend == "dinov2":
-+        dino_fields = (
-+            "backend",
-+            "local_repository_path",
-+            "repository_commit",
-+            "pretrained_weight_path",
-+            "pretrained_weight_sha256",
-+            "weight_loading",
-+        )
-+        missing = [field for field in dino_fields if not provenance.get(field)]
-+        if missing:
-+            raise ValueError(f"Incomplete DINOv2 provenance: missing {missing}")
-+        model = metadata.get("dinov2_model")
-+        if not model or provenance["backend"] != f"dinov2:{model}":
-+            raise ValueError("DINOv2 model name and extractor backend identity disagree")
-+        if re.fullmatch(r"[0-9a-fA-F]{40,64}", str(provenance["repository_commit"])) is None:
-+            raise ValueError("DINOv2 repository_commit must be a full hexadecimal commit")
-+        if re.fullmatch(r"[0-9a-fA-F]{64}", str(provenance["pretrained_weight_sha256"])) is None:
-+            raise ValueError("DINOv2 pretrained_weight_sha256 must be a SHA256 digest")
-+        if provenance["weight_loading"] != "explicit_local_state_dict":
-+            raise ValueError("DINOv2 weights must come from an explicit local state dict")
-+        repository = Path(str(provenance["local_repository_path"])).expanduser().resolve()
-+        if not repository.is_dir() or not (repository / "hubconf.py").is_file():
-+            raise ValueError("DINOv2 local repository is missing or invalid")
-+        weights = _require_bound_file(
-+            provenance["pretrained_weight_path"],
-+            provenance["pretrained_weight_sha256"],
-+            "DINOv2 pretrained weights",
-+        )
-+        protocol.update(
-+            {
-+                "dinov2_model": str(model),
-+                "dinov2_local_repository_path": str(repository),
-+                "dinov2_repository_commit": str(provenance["repository_commit"]),
-+                "dinov2_pretrained_weight_path": str(weights),
-+                "dinov2_pretrained_weight_sha256": str(
-+                    provenance["pretrained_weight_sha256"]
-+                ),
-+            }
-+        )
++        protocol.update(dinov2_protocol_from_metadata(metadata))
 +    elif backend == "rgb":
 +        if provenance.get("backend") != "rgb" or provenance.get("weight_loading") != "none":
 +            raise ValueError("RGB backend provenance is inconsistent")
@@ -4499,6 +4508,206 @@ index 02e73a1..f49b90e 100644
 +
 +
 +__all__ = list(_EXPORTS)
+diff --git a/geometric_constraints/adaptive_weighting.py b/geometric_constraints/adaptive_weighting.py
+deleted file mode 100644
+index e8d4e995fb866b6c95406c4b14b6eed55ac56f86..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 39952
+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
+
 diff --git a/geometric_constraints/repaired_geometry.py b/geometric_constraints/repaired_geometry.py
 new file mode 100644
 index 0000000..73dfa7f
@@ -6160,10 +6369,10 @@ index 0000000..af799e7
 +        )
 diff --git a/tests/test_dinov2_metadata.py b/tests/test_dinov2_metadata.py
 new file mode 100644
-index 0000000..629203d
+index 0000000..b08be64
 --- /dev/null
 +++ b/tests/test_dinov2_metadata.py
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,100 @@
 +from __future__ import annotations
 +
 +import hashlib
@@ -6175,10 +6384,16 @@ index 0000000..629203d
 +ROOT = Path(__file__).resolve().parents[1]
 +sys.path.insert(0, str(ROOT))
 +
-+from diffusion_guidance.evidence_protocol import identity_protocol_from_metadata
++from diffusion_guidance.evidence_protocol import dinov2_protocol_from_metadata
 +
 +
-+def dino_metadata():
++def dino_metadata(tmp_path: Path):
++    repository = tmp_path / "dinov2"
++    repository.mkdir()
++    (repository / "hubconf.py").write_text("# fixture\n", encoding="utf-8")
++    weights = tmp_path / "weights" / "dinov2_vits14.pth"
++    weights.parent.mkdir()
++    weights.write_bytes(b"fixed-dinov2-weight-fixture")
 +    return {
 +        "feature_backend": "dinov2",
 +        "dinov2_model": "dinov2_vits14",
@@ -6201,27 +6416,27 @@ index 0000000..629203d
 +        ],
 +        "extractor_provenance": {
 +            "backend": "dinov2:dinov2_vits14",
-+            "local_repository_path": "/opt/dinov2",
++            "local_repository_path": str(repository),
 +            "repository_commit": "a" * 40,
-+            "pretrained_weight_path": "/opt/weights/dinov2_vits14.pth",
-+            "pretrained_weight_sha256": "b" * 64,
++            "pretrained_weight_path": str(weights),
++            "pretrained_weight_sha256": hashlib.sha256(weights.read_bytes()).hexdigest(),
 +            "weight_loading": "explicit_local_state_dict",
 +        },
 +    }
 +
 +
-+def test_report_protocol_contains_immutable_dinov2_identity():
-+    protocol = identity_protocol_from_metadata(dino_metadata(), 32)
++def test_report_protocol_contains_immutable_dinov2_identity(tmp_path: Path):
++    protocol = dinov2_protocol_from_metadata(dino_metadata(tmp_path))
 +    assert protocol["feature_backend_identity"] == "dinov2:dinov2_vits14"
 +    assert protocol["dinov2_repository_commit"] == "a" * 40
-+    assert protocol["dinov2_pretrained_weight_sha256"] == "b" * 64
++    assert len(protocol["dinov2_pretrained_weight_sha256"]) == 64
 +
 +
-+def test_missing_or_malformed_dinov2_weight_hash_fails_closed():
-+    metadata = dino_metadata()
++def test_missing_or_malformed_dinov2_weight_hash_fails_closed(tmp_path: Path):
++    metadata = dino_metadata(tmp_path)
 +    metadata["extractor_provenance"]["pretrained_weight_sha256"] = "unknown"
 +    with pytest.raises(ValueError, match="pretrained_weight_sha256"):
-+        identity_protocol_from_metadata(metadata, 32)
++        dinov2_protocol_from_metadata(metadata)
 +
 +
 +def test_feature_extractor_hashes_explicit_local_weights(monkeypatch, tmp_path):
@@ -7270,7 +7485,7 @@ index 0000000..6678441
 +        audit_records([record], origin="fixture", require_assets=True)
 diff --git a/tests/test_real_camera_projection_equivalence.py b/tests/test_real_camera_projection_equivalence.py
 new file mode 100644
-index 0000000..5aaa380
+index 0000000..9b50c9f
 --- /dev/null
 +++ b/tests/test_real_camera_projection_equivalence.py
 @@ -0,0 +1,87 @@
@@ -7360,7 +7575,7 @@ index 0000000..5aaa380
 +    points = torch.tensor([[0.2, -0.1, 2.0]], dtype=torch.float64)
 +    records = compare_camera(points, camera, k, tolerance=1e-8, matrix_tolerance=1e-8)
 +    assert not records[0]["passed"]
-+    assert records[0]["translation_max_abs_difference"] > 1e-8
++    assert records[0]["homogeneous_row_max_abs_difference"] > 1e-8
 diff --git a/tests/test_research_revision.py b/tests/test_research_revision.py
 new file mode 100644
 index 0000000..cad4e79
@@ -12443,10 +12658,10 @@ index 0000000..339f136
 +    main()
 diff --git a/tools/check_camera_projection_equivalence.py b/tools/check_camera_projection_equivalence.py
 new file mode 100644
-index 0000000..c014cf1
+index 0000000..69017bb
 --- /dev/null
 +++ b/tools/check_camera_projection_equivalence.py
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,212 @@
 +#!/usr/bin/env python3
 +"""P0 fail-closed equivalence gate for H5 and live-upstream camera projections.
 +
@@ -12516,11 +12731,20 @@ index 0000000..c014cf1
 +    h5_translation = torch.as_tensor(
 +        calibration["translation_w2c"], device=anchors.device, dtype=anchors.dtype
 +    )
++    expected_homogeneous_row = torch.zeros(
++        4, device=anchors.device, dtype=anchors.dtype
++    )
++    expected_homogeneous_row[3] = 1.0
 +    rotation_difference = float(
 +        torch.max(torch.abs(live_world_to_camera[:3, :3] - h5_rotation)).item()
 +    )
 +    translation_difference = float(
 +        torch.max(torch.abs(live_world_to_camera[:3, 3] - h5_translation)).item()
++    )
++    homogeneous_difference = float(
++        torch.max(
++            torch.abs(live_world_to_camera[3, :] - expected_homogeneous_row)
++        ).item()
 +    )
 +    resolutions = [
 +        ("original", int(calibration["width"]), int(calibration["height"])),
@@ -12552,6 +12776,7 @@ index 0000000..c014cf1
 +            "max_pixel_difference": float(delta.max()),
 +            "rotation_max_abs_difference": rotation_difference,
 +            "translation_max_abs_difference": translation_difference,
++            "homogeneous_row_max_abs_difference": homogeneous_difference,
 +            "intrinsics_max_abs_difference": intrinsic_difference,
 +            "tolerance_px": tolerance,
 +            "matrix_tolerance": matrix_tolerance,
@@ -12559,6 +12784,7 @@ index 0000000..c014cf1
 +                delta.max() <= tolerance
 +                and rotation_difference <= matrix_tolerance
 +                and translation_difference <= matrix_tolerance
++                and homogeneous_difference <= matrix_tolerance
 +                and intrinsic_difference <= matrix_tolerance
 +            ),
 +            "path_a": "H5 world_to_camera: R @ X + t; row-vector implementation X @ R.T + t",
@@ -17518,16 +17744,17 @@ index 0000000..48efb4c
 +    main()
 diff --git a/tools/smoke_test_phase2_1.py b/tools/smoke_test_phase2_1.py
 new file mode 100644
-index 0000000..d6a2d19
+index 0000000..d77eda4
 --- /dev/null
 +++ b/tools/smoke_test_phase2_1.py
-@@ -0,0 +1,608 @@
+@@ -0,0 +1,1118 @@
 +#!/usr/bin/env python3
 +"""CPU smoke tests for every Phase 2.1 integrity patch."""
 +
 +from __future__ import annotations
 +
 +import json
++import hashlib
 +from pathlib import Path
 +import random
 +import subprocess
@@ -17549,12 +17776,32 @@ index 0000000..d6a2d19
 +    source_quality,
 +    source_scene_scale,
 +)
-+from diffusion_guidance.pseudo_manifest import pseudo_view_index
++from diffusion_guidance.pseudo_manifest import load_pseudo_manifest, pseudo_view_index
 +from diffusion_guidance.camera_utils import camera_fingerprint_from_payload
-+from diffusion_guidance.difix_provenance import (
-+    CACHE_IDENTITY_FIELDS,
-+    cache_run_fingerprint,
++from diffusion_guidance.checkpoint_state import (
++    FORMAT as CHECKPOINT_FORMAT,
++    RENDER_STATE_SCHEMA,
++    load_checkpoint_summary,
 +)
++from diffusion_guidance.control_identity import (
++    PREREGISTERED_CONTROLLED_OPTIMIZATION,
++    controlled_checkpoint_provenance_from_metadata,
++    controlled_checkpoint_provenance_sha256,
++    controlled_pair_id,
++    controlled_training_protocol_sha256,
++    source_camera_set_sha256,
++    source_image_inventory_sha256,
++    training_camera_inventory_sha256,
++)
++from diffusion_guidance.difix_provenance import (
++    A0_PSEUDO_MANIFEST_SCHEMA,
++    CACHE_IDENTITY_FIELDS,
++    HELDOUT_DIAGNOSTIC_MANIFEST_SCHEMA,
++    cache_run_fingerprint,
++    manifest_record_sha256,
++    reproducibility_check_sha256,
++)
++from diffusion_guidance.result_binding import RESULT_BINDING_SCHEMA, read_pair_audit
 +from diffusion_guidance.evidence_features import SpatialFeatureMap
 +from diffusion_guidance.evidence_matching import (
 +    choose_hard_shuffled_indices,
@@ -17972,50 +18219,111 @@ index 0000000..d6a2d19
 +    assert a1 == b
 +
 +
-+def test_evidence_end_to_end(root: Path) -> None:
-+    track_xyz = np.asarray(
-+        [[0.0, 0.0, 2.5], [0.2, 0.0, 2.5], [-0.2, 0.1, 2.5]],
-+        dtype=np.float32,
-+    )
-+    h5_path = root / "evidence_tracks.h5"
-+    write_strict_h5(h5_path, track_xyz)
-+    image_y, image_x = np.mgrid[0:120, 0:160]
-+    array = np.stack(
-+        [image_x / 159.0, image_y / 119.0, (image_x + image_y) / 278.0],
-+        axis=-1,
-+    )
-+    array = np.clip(array * 255.0, 0, 255).astype(np.uint8)
-+    for name in ("image_1.png", "image_2.png", "gs.png", "difix.png", "real.png"):
-+        Image.fromarray(array).save(root / name)
-+    manifest = root / "evidence_manifest.jsonl"
-+    import hashlib
-+    def digest(path):
-+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-+    payload = {
-+        "R": np.eye(3).tolist(), "T": [0.0, 0.0, 0.0],
-+        "FoVx": 1.0, "FoVy": 1.0, "width": 160, "height": 120,
-+        "intrinsics": {"fx": 100.0, "fy": 100.0, "cx": 80.0, "cy": 60.0, "width": 160, "height": 120},
++def _digest(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def _write_json(path: Path, value: dict) -> Path:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    return path.resolve()
++
++
++def _controlled_protocol(role: str, scene: Path, track: Path, start: Path | None) -> dict:
++    iterations = 10000 if role == "A0" else 12000
++    common = {
++        **PREREGISTERED_CONTROLLED_OPTIMIZATION,
++        "iterations": iterations,
++        "experiment_seed": 1,
++        "position_lr_init": 0.00016,
 +    }
-+    key = camera_fingerprint_from_payload(payload, prefix="heldout")
-+    difix_manifest = root / "difix_manifest.jsonl"
-+    difix_manifest.write_text(
-+        json.dumps(
-+            {
-+                "key": key,
-+                "camera": payload,
-+                "input": str(root / "gs.png"),
-+                "reference_image": str(root / "image_1.png"),
-+                "target": str(root / "difix.png"),
-+            }
-+        )
-+        + "\n",
-+        encoding="utf-8",
++    return {
++        "schema": "controlled_training_protocol_v1",
++        "model": {
++            "source_path": str(scene),
++            "track_path": str(track),
++            "images": "images",
++            "strict_tracks": True,
++            "strict_source_only_geometry": True,
++        },
++        "optimization": dict(common),
++        "pipeline": {"debug": False},
++        "runtime": {
++            **common,
++            "source_path": str(scene),
++            "track_path": str(track),
++            "start_checkpoint": None if start is None else str(start),
++            "test_iterations": [iterations],
++            "save_iterations": [iterations],
++            "checkpoint_iterations": [iterations],
++            "quiet": False,
++        },
++    }
++
++
++def _checkpoint_state(provenance: dict) -> dict:
++    count = 3
++    core = {
++        "active_sh_degree": 0,
++        "max_sh_degree": 0,
++        "_xyz": torch.tensor(
++            [[0.0, 0.0, 2.5], [0.2, 0.0, 2.5], [-0.2, 0.1, 2.5]],
++            dtype=torch.float32,
++        ),
++        "_features_dc": torch.zeros((count, 1, 3), dtype=torch.float32),
++        "_features_rest": torch.zeros((count, 0, 3), dtype=torch.float32),
++        "_scaling": torch.zeros((count, 3), dtype=torch.float32),
++        "_rotation": torch.zeros((count, 4), dtype=torch.float32),
++        "_opacity": torch.zeros((count, 1), dtype=torch.float32),
++        "max_radii2D": torch.zeros(count, dtype=torch.float32),
++        "xyz_gradient_accum": torch.zeros((count, 1), dtype=torch.float32),
++        "denom": torch.ones((count, 1), dtype=torch.float32),
++    }
++    groups = {
++        "xyz": core["_xyz"],
++        "f_dc": core["_features_dc"],
++        "f_rest": core["_features_rest"],
++        "opacity": core["_opacity"],
++        "scaling": core["_scaling"],
++        "rotation": core["_rotation"],
++    }
++    optimizer_state, optimizer_groups = {}, []
++    for identifier, (name, tensor) in enumerate(groups.items()):
++        optimizer_state[identifier] = {
++            "step": 1,
++            "exp_avg": torch.zeros_like(tensor),
++            "exp_avg_sq": torch.zeros_like(tensor),
++        }
++        optimizer_groups.append({"name": name, "params": [identifier]})
++    return {
++        "format": CHECKPOINT_FORMAT,
++        "core": core,
++        "spatial_lr_scale": 1.0,
++        "optimizer": {"state": optimizer_state, "param_groups": optimizer_groups},
++        "confidence": torch.ones((count, 1), dtype=torch.float32),
++        "init_point": core["_xyz"].clone(),
++        "bg_color": torch.zeros(3, dtype=torch.float32),
++        "python_rng": random.getstate(),
++        "numpy_rng": np.random.get_state(),
++        "torch_rng": torch.get_rng_state(),
++        "cuda_rng": [torch.get_rng_state().clone()],
++        "controlled_provenance": provenance,
++    }
++
++
++def _write_checkpoint(path: Path, iteration: int, provenance: dict) -> dict:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    torch.save((_checkpoint_state(provenance), iteration), path)
++    return load_checkpoint_summary(
++        path,
++        expected_iteration=iteration,
++        require_cuda_rng=True,
++        require_controlled_provenance=True,
 +    )
-+    run_metadata = {
-+        "manifest": str(difix_manifest.resolve()),
-+        "manifest_sha256": digest(difix_manifest),
-+        "record_count": 1,
-+        "seed": 1,
++
++
++def _cache_protocol() -> dict:
++    return {
 +        "model_id": "fixture/difix",
 +        "model_revision": "a" * 40,
 +        "difix_code_commit": "b" * 40,
@@ -18026,74 +18334,502 @@ index 0000000..d6a2d19
 +        "guidance_scale": 0.0,
 +        "prompt": "remove degradation",
 +    }
-+    run_metadata["cache_run_fingerprint"] = cache_run_fingerprint(run_metadata)
-+    difix_manifest.with_suffix(".jsonl.difix_metadata.json").write_text(
-+        json.dumps(run_metadata), encoding="utf-8"
-+    )
-+    difix_sidecar = {
-+        **{field: run_metadata[field] for field in CACHE_IDENTITY_FIELDS},
-+        "cache_run_fingerprint": run_metadata["cache_run_fingerprint"],
-+        "input_image": str((root / "gs.png").resolve()),
-+        "reference_image": str((root / "image_1.png").resolve()),
-+        "target_image": str((root / "difix.png").resolve()),
-+        "input_sha256": digest(root / "gs.png"),
-+        "reference_sha256": digest(root / "image_1.png"),
-+        "output_sha256": digest(root / "difix.png"),
-+        "camera_fingerprint": key, "resolution": [160, 120],
++
++
++def _write_strict_difix_cache(
++    manifest: Path,
++    record: dict,
++    *,
++    input_path: Path,
++    reference_path: Path,
++    target_path: Path,
++) -> dict:
++    manifest.parent.mkdir(parents=True, exist_ok=True)
++    manifest.write_text(json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")
++    reproducibility = {
++        "passed": True,
++        "camera_fingerprint": record["key"],
++        "input_sha256": _digest(input_path),
++        "reference_sha256": _digest(reference_path),
++        "output_sha256": _digest(target_path),
++        "repeated_output_sha256": _digest(target_path),
++        "mode": "byte_exact",
 +    }
-+    (root / "difix.png.metadata.json").write_text(json.dumps(difix_sidecar), encoding="utf-8")
-+    manifest.write_text(
-+        json.dumps(
++    metadata = {
++        "manifest_schema": record["manifest_schema"],
++        "manifest": str(manifest.resolve()),
++        "manifest_sha256": _digest(manifest),
++        "record_count": 1,
++        "seed": 1,
++        **_cache_protocol(),
++        "reproducibility_check": reproducibility,
++        "reproducibility_check_sha256": reproducibility_check_sha256(reproducibility),
++    }
++    metadata["cache_run_fingerprint"] = cache_run_fingerprint(metadata)
++    _write_json(manifest.with_suffix(manifest.suffix + ".difix_metadata.json"), metadata)
++    sidecar = {
++        **{field: metadata[field] for field in CACHE_IDENTITY_FIELDS},
++        "cache_run_fingerprint": metadata["cache_run_fingerprint"],
++        "input_image": str(input_path.resolve()),
++        "reference_image": str(reference_path.resolve()),
++        "target_image": str(target_path.resolve()),
++        "input_sha256": _digest(input_path),
++        "reference_sha256": _digest(reference_path),
++        "output_sha256": _digest(target_path),
++        "camera_fingerprint": record["key"],
++        "resolution": [160, 120],
++        "source_manifest_record": record,
++        "source_manifest_record_sha256": manifest_record_sha256(record),
++    }
++    _write_json(target_path.with_suffix(target_path.suffix + ".metadata.json"), sidecar)
++    return metadata
++
++
++def _final_checkpoint_record(path: Path, summary: dict, provenance: dict) -> dict:
++    return {
++        "path": str(path.resolve()),
++        "sha256": _digest(path),
++        "iteration": summary["iteration"],
++        "state_format": summary["format"],
++        "gaussian_count": summary["gaussian_count"],
++        "render_state_schema": summary["render_state_schema"],
++        "render_state_sha256": summary["render_state_sha256"],
++        "controlled_provenance": provenance,
++        "controlled_provenance_sha256": summary["controlled_provenance_sha256"],
++    }
++
++
++def test_evidence_end_to_end(root: Path) -> None:
++    """Exercise v2 Difix, v4 paired identity and v2 checkpoint binding together."""
++    scene = root / "fern"
++    images_dir = scene / "images"
++    images_dir.mkdir(parents=True)
++    h5_path = scene / "tracks.h5"
++    track_xyz = np.asarray(
++        [[0.0, 0.0, 2.5], [0.2, 0.0, 2.5], [-0.2, 0.1, 2.5]],
++        dtype=np.float32,
++    )
++    write_strict_h5(h5_path, track_xyz)
++
++    image_y, image_x = np.mgrid[0:120, 0:160]
++    array = np.stack(
++        [image_x / 159.0, image_y / 119.0, (image_x + image_y) / 278.0],
++        axis=-1,
++    )
++    array = np.clip(array * 255.0, 0, 255).astype(np.uint8)
++    for name in ("image_1.png", "image_2.png", "image_3.png"):
++        Image.fromarray(array).save(images_dir / name)
++
++    source_names = ["image_1", "image_2"]
++    source_inventory = [
++        {
++            "camera_name": name,
++            "path": str((images_dir / f"{name}.png").resolve()),
++            "sha256": _digest(images_dir / f"{name}.png"),
++        }
++        for name in source_names
++    ]
++    source_inventory_sha256 = source_image_inventory_sha256(source_inventory)
++    source_camera_sha256 = source_camera_set_sha256(source_names)
++    source_cameras = []
++    for name, translation in (("image_1", [0.4, 0.0, 0.0]), ("image_2", [-0.4, 0.0, 0.0])):
++        source_cameras.append(
 +            {
-+                "image_name": "image_3.png", "camera_fingerprint": key, "camera": payload,
-+                "gs_render": str(root / "gs.png"), "difix_output": str(root / "difix.png"),
-+                "real_target": str(root / "real.png"), "reference_image": str(root / "image_1.png"),
-+                "gs_render_sha256": digest(root / "gs.png"),
-+                "reference_image_sha256": digest(root / "image_1.png"),
-+                "real_target_sha256": digest(root / "real.png"),
++                "camera_name": name,
++                "camera": {
++                    "R": np.eye(3).tolist(),
++                    "T": translation,
++                    "FoVx": 1.0,
++                    "FoVy": 1.0,
++                    "width": 160,
++                    "height": 120,
++                    "intrinsics": {
++                        "fx": 100.0,
++                        "fy": 100.0,
++                        "cx": 80.0,
++                        "cy": 60.0,
++                        "width": 160,
++                        "height": 120,
++                    },
++                },
 +            }
-+        ) + "\n",
-+        encoding="utf-8",
++        )
++    camera_inventory_sha256 = training_camera_inventory_sha256(source_cameras)
++    strict_geometry = {
++        "strict_tracks": True,
++        "strict_source_only_geometry": True,
++        "strict_track_weight": 0.1,
++        "densify_until_iter": 10000,
++        "mixed_precision": False,
++        "disable_legacy_pseudo_depth": True,
++        "disable_depth_loss": True,
++        "geometry_reg_enabled": False,
++        "use_gt_dca": False,
++    }
++
++    def metadata_for(role: str, start: Path | None, a0_digest: str | None, pseudo: Path | None = None) -> dict:
++        protocol = _controlled_protocol(role, scene.resolve(), h5_path.resolve(), start)
++        return {
++            "role": role,
++            "seed": 1,
++            "checkpoint_iteration": 10000,
++            "final_iteration": 10000 if role == "A0" else 12000,
++            "start_checkpoint": None if start is None else str(start.resolve()),
++            "start_checkpoint_sha256": None if start is None else _digest(start),
++            "start_checkpoint_controlled_provenance_sha256": a0_digest,
++            "scene_source_path": str(scene.resolve()),
++            "track_h5_path": str(h5_path.resolve()),
++            "track_h5_sha256": _digest(h5_path),
++            "source_camera_names": source_names,
++            "source_camera_set_sha256": source_camera_sha256,
++            "source_images_dir": str(images_dir.resolve()),
++            "source_image_inventory": source_inventory,
++            "source_image_inventory_sha256": source_inventory_sha256,
++            "source_training_camera_inventory": source_cameras,
++            "source_training_camera_inventory_sha256": camera_inventory_sha256,
++            "controlled_training_protocol": protocol,
++            "controlled_training_protocol_sha256": controlled_training_protocol_sha256(protocol),
++            "strict_geometry_protocol": strict_geometry,
++            "pseudo_manifest_path": None if pseudo is None else str(pseudo.resolve()),
++            "pseudo_manifest_sha256": None if pseudo is None else _digest(pseudo),
++            "pseudo_camera_pool_sha256": None if pseudo is None else "e" * 64,
++            "pseudo_target_kind": None if pseudo is None else "difix",
++            "pseudo_rgb_strict_cache": pseudo is not None,
++        }
++
++    a0_metadata = metadata_for("A0", None, None)
++    a0_provenance = controlled_checkpoint_provenance_from_metadata(a0_metadata)
++    a0_path = root / "A0" / "chkpnt10000.pth"
++    a0_summary = _write_checkpoint(a0_path, 10000, a0_provenance)
++    a0_digest = a0_summary["controlled_provenance_sha256"]
++
++    heldout_camera = {
++        "R": np.eye(3).tolist(),
++        "T": [0.0, 0.0, 0.0],
++        "FoVx": 1.0,
++        "FoVy": 1.0,
++        "width": 160,
++        "height": 120,
++        "intrinsics": {
++            "fx": 100.0,
++            "fy": 100.0,
++            "cx": 80.0,
++            "cy": 60.0,
++            "width": 160,
++            "height": 120,
++        },
++    }
++    pseudo_key = camera_fingerprint_from_payload(heldout_camera)
++    pseudo_input = root / "A0" / "pseudo_input.png"
++    pseudo_target = root / "B" / "pseudo_target.png"
++    pseudo_target.parent.mkdir(parents=True, exist_ok=True)
++    Image.fromarray(array).save(pseudo_input)
++    Image.fromarray(array).save(pseudo_target)
++    live_pseudo_audit = _write_json(
++        root / "A0" / "live_pseudo_audit.json",
++        {
++            "passed": True,
++            "projection_context_fingerprint": "f" * 64,
++            "track_h5_sha256": _digest(h5_path),
++            "records": [{"camera_fingerprint": pseudo_key}],
++        },
 +    )
-+    output = root / "evidence_output"
-+    subprocess.run(
-+        [
-+            sys.executable,
-+            str(Path(__file__).with_name("evaluate_track_evidence.py")),
-+            "--track-h5",
-+            str(h5_path),
-+            "--images-dir",
-+            str(root),
-+            "--target-manifest",
-+            str(manifest),
-+            "--feature-backend",
-+            "rgb",
-+            "--device",
-+            "cpu",
-+            "--window-radii",
-+            "32",
-+            "--output-dir",
-+            str(output),
-+        ],
-+        check=True,
-+        stdout=subprocess.PIPE,
-+        stderr=subprocess.STDOUT,
-+        text=True,
++    pseudo_manifest = root / "B" / "pseudo_supervision.jsonl"
++    pseudo_record = {
++        "manifest_schema": A0_PSEUDO_MANIFEST_SCHEMA,
++        "key": pseudo_key,
++        "camera": heldout_camera,
++        "input": str(pseudo_input.resolve()),
++        "reference_image": str((images_dir / "image_1.png").resolve()),
++        "target": str(pseudo_target.resolve()),
++        "supervision_target_kind": "difix",
++        "input_sha256": _digest(pseudo_input),
++        "reference_image_sha256": _digest(images_dir / "image_1.png"),
++        "a0_checkpoint": str(a0_path.resolve()),
++        "a0_checkpoint_sha256": _digest(a0_path),
++        "a0_checkpoint_iteration": 10000,
++        "a0_checkpoint_state_format": a0_summary["format"],
++        "a0_checkpoint_gaussian_count": a0_summary["gaussian_count"],
++        "a0_checkpoint_render_state_schema": a0_summary["render_state_schema"],
++        "a0_checkpoint_render_state_sha256": a0_summary["render_state_sha256"],
++        "a0_checkpoint_controlled_provenance_sha256": a0_digest,
++        "a0_render_state_source": "complete_checkpoint_restore_after_scene_ply_load",
++        "live_pseudo_audit": str(live_pseudo_audit),
++        "live_pseudo_audit_sha256": _digest(live_pseudo_audit),
++        "projection_context_fingerprint": "f" * 64,
++        "track_h5": str(h5_path.resolve()),
++        "track_h5_sha256": _digest(h5_path),
++        "source_camera_names": source_names,
++        "source_camera_set_sha256": source_camera_sha256,
++    }
++    _write_strict_difix_cache(
++        pseudo_manifest,
++        pseudo_record,
++        input_path=pseudo_input,
++        reference_path=images_dir / "image_1.png",
++        target_path=pseudo_target,
 +    )
-+    summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
-+    for key in (
-+        "projection_mean_error",
-+        "projection_median_error",
-+        "projection_pck3",
-+        "projection_pck5",
-+        "projection_pck8",
-+        "gs_mean_error",
-+        "difix_mean_error",
-+        "real_reference_mean_error",
-+        "difix_vs_projection_error_reduction",
-+        "difix_vs_gs_error_reduction",
-+    ):
-+        assert key in summary
++    assert len(load_pseudo_manifest(pseudo_manifest, strict_targets=True)) == 1
++
++    a1_metadata = metadata_for("A1", a0_path, a0_digest)
++    b_metadata = metadata_for("B", a0_path, a0_digest, pseudo_manifest)
++    pair_id = controlled_pair_id(a1_metadata)
++    a1_metadata["controlled_pair_id"] = pair_id
++    b_metadata["controlled_pair_id"] = pair_id
++    a1_provenance = controlled_checkpoint_provenance_from_metadata(a1_metadata)
++    b_provenance = controlled_checkpoint_provenance_from_metadata(b_metadata)
++    a1_path = root / "A1" / "chkpnt12000.pth"
++    b_path = root / "B" / "chkpnt12000.pth"
++    a1_summary = _write_checkpoint(a1_path, 12000, a1_provenance)
++    b_summary = _write_checkpoint(b_path, 12000, b_provenance)
++
++    audit = {
++        "audit_schema": RESULT_BINDING_SCHEMA,
++        "passed": True,
++        "failures": [],
++        "pair_id": pair_id,
++        "controlled_pair_id": pair_id,
++        "dataset": "LLFF",
++        "scene": "fern",
++        "role": "development",
++        "seed": 1,
++        "scene_source_path": str(scene.resolve()),
++        "start_checkpoint_path": str(a0_path.resolve()),
++        "start_checkpoint_sha256": _digest(a0_path),
++        "checkpoint_iteration": 10000,
++        "final_iteration": 12000,
++        "track_h5_path": str(h5_path.resolve()),
++        "track_h5_sha256": _digest(h5_path),
++        "source_camera_names": source_names,
++        "source_camera_set_sha256": source_camera_sha256,
++        "source_images_dir": str(images_dir.resolve()),
++        "source_image_inventory": source_inventory,
++        "source_image_inventory_sha256": source_inventory_sha256,
++        "source_training_camera_inventory": source_cameras,
++        "source_training_camera_inventory_sha256": camera_inventory_sha256,
++        "controlled_training_protocol": a1_metadata["controlled_training_protocol"],
++        "controlled_training_protocol_sha256": a1_metadata["controlled_training_protocol_sha256"],
++        "start_checkpoint_controlled_provenance": a0_provenance,
++        "start_checkpoint_controlled_provenance_sha256": a0_digest,
++        "strict_geometry_protocol": strict_geometry,
++        "audited_methods": ["A1", "B"],
++        "audited_contrasts": [["A1", "B"]],
++        "pseudo_validated_methods": ["B"],
++        "final_checkpoints": {
++            "A1": _final_checkpoint_record(a1_path, a1_summary, a1_provenance),
++            "B": _final_checkpoint_record(b_path, b_summary, b_provenance),
++        },
++    }
++    audited_paths = [a0_path, h5_path, images_dir / "image_1.png", images_dir / "image_2.png", a1_path, b_path]
++    audit["audited_input_files"] = [
++        {"path": str(path.resolve()), "sha256": _digest(path)}
++        for path in sorted(audited_paths, key=lambda item: str(item.resolve()))
++    ]
++    audit["audited_input_file_count"] = len(audit["audited_input_files"])
++    audit["audited_input_fingerprint"] = hashlib.sha256(
++        json.dumps(
++            audit["audited_input_files"],
++            sort_keys=True,
++            separators=(",", ":"),
++            ensure_ascii=True,
++        ).encode("utf-8")
++    ).hexdigest()
++    audit_path = _write_json(root / "pair_audit.json", audit)
++    _, checked_audit = read_pair_audit(audit_path)
++    assert checked_audit["final_checkpoints"]["B"]["controlled_provenance"] == b_provenance
++
++    common_context = {
++        "dataset": "LLFF",
++        "scene": "fern",
++        "seed": 1,
++        "experiment_role": "development",
++        "scene_source_path": str(scene.resolve()),
++        "controlled_pair_id": pair_id,
++        "pair_audit": str(audit_path),
++        "pair_audit_sha256": _digest(audit_path),
++        "track_h5": str(h5_path.resolve()),
++        "track_h5_sha256": _digest(h5_path),
++        "source_camera_names": source_names,
++        "source_camera_set_sha256": source_camera_sha256,
++    }
++    reference_path = images_dir / "image_1.png"
++    real_target = images_dir / "image_3.png"
++    arm_contexts = {}
++    for arm, checkpoint, summary in (("A1", a1_path, a1_summary), ("B", b_path, b_summary)):
++        arm_dir = root / arm
++        render = arm_dir / "heldout_gs.png"
++        target = arm_dir / "heldout_difix.png"
++        Image.fromarray(array).save(render)
++        Image.fromarray(array).save(target)
++        key = camera_fingerprint_from_payload(heldout_camera, prefix="heldout")
++        checkpoint_fields = {
++            "checkpoint": str(checkpoint.resolve()),
++            "checkpoint_sha256": _digest(checkpoint),
++            "checkpoint_iteration": 12000,
++            "checkpoint_state_format": summary["format"],
++            "checkpoint_gaussian_count": summary["gaussian_count"],
++            "checkpoint_render_state_schema": summary["render_state_schema"],
++            "checkpoint_render_state_sha256": summary["render_state_sha256"],
++            "checkpoint_controlled_provenance_sha256": summary["controlled_provenance_sha256"],
++            "scene_ply_gaussian_count": summary["gaussian_count"],
++            "scene_ply_checkpoint_count_match": True,
++            "scene_ply_render_state_schema": summary["render_state_schema"],
++            "scene_ply_render_state_sha256": summary["render_state_sha256"],
++            "scene_ply_checkpoint_render_state_match": True,
++        }
++        cache_record = {
++            "manifest_schema": HELDOUT_DIAGNOSTIC_MANIFEST_SCHEMA,
++            "key": key,
++            "image_name": "image_3.png",
++            "camera": heldout_camera,
++            "camera_source": "heldout_evaluation_camera",
++            "input": str(render.resolve()),
++            "reference_image": str(reference_path.resolve()),
++            "target": str(target.resolve()),
++            "input_sha256": _digest(render),
++            "reference_image_sha256": _digest(reference_path),
++            **common_context,
++            "paired_identity_arm": arm,
++            **checkpoint_fields,
++        }
++        difix_manifest = arm_dir / "difix_manifest.jsonl"
++        cache_metadata = _write_strict_difix_cache(
++            difix_manifest,
++            cache_record,
++            input_path=render,
++            reference_path=reference_path,
++            target_path=target,
++        )
++        evidence_record = {
++            "manifest_schema": HELDOUT_DIAGNOSTIC_MANIFEST_SCHEMA,
++            "image_name": "image_3.png",
++            "camera_fingerprint": key,
++            "camera": heldout_camera,
++            "camera_source": "heldout_evaluation_camera",
++            "gs_render": str(render.resolve()),
++            "difix_output": str(target.resolve()),
++            "real_target": str(real_target.resolve()),
++            "reference_image": str(reference_path.resolve()),
++            "gs_render_sha256": _digest(render),
++            "reference_image_sha256": _digest(reference_path),
++            "real_target_sha256": _digest(real_target),
++            **common_context,
++            "paired_identity_arm": arm,
++            **checkpoint_fields,
++        }
++        evidence_manifest = arm_dir / "evidence_manifest.jsonl"
++        evidence_manifest.write_text(
++            json.dumps(evidence_record, sort_keys=True) + "\n", encoding="utf-8"
++        )
++        arm_contexts[arm.lower()] = {
++            "evidence_manifest": evidence_manifest.resolve(),
++            "difix_manifest": difix_manifest.resolve(),
++            "difix_metadata": difix_manifest.with_suffix(difix_manifest.suffix + ".difix_metadata.json").resolve(),
++            "cache_metadata": cache_metadata,
++            "checkpoint_fields": checkpoint_fields,
++            "render": render.resolve(),
++            "target": target.resolve(),
++            "key": key,
++        }
++
++    paired_manifest = root / "paired_identity_manifest.jsonl"
++    difix_protocol = {
++        field: arm_contexts["a1"]["cache_metadata"][field]
++        for field in (
++            "model_id", "model_revision", "difix_code_commit", "coordinate_policy",
++            "dtype", "timesteps", "guidance_scale", "prompt",
++        )
++    }
++    paired_row = {
++        "manifest_schema": "paired_identity_manifest_v4",
++        **common_context,
++        "source_images_dir": str(images_dir.resolve()),
++        "source_image_inventory": source_inventory,
++        "source_image_inventory_sha256": source_inventory_sha256,
++        "a1_difix_protocol": difix_protocol,
++        "b_difix_protocol": difix_protocol,
++        "image_name": "image_3.png",
++        "camera": heldout_camera,
++        "camera_fingerprint": arm_contexts["a1"]["key"],
++        "a1_render": str(arm_contexts["a1"]["render"]),
++        "a1_render_sha256": _digest(arm_contexts["a1"]["render"]),
++        "a1_difix_output": str(arm_contexts["a1"]["target"]),
++        "a1_difix_output_sha256": _digest(arm_contexts["a1"]["target"]),
++        "b_render": str(arm_contexts["b"]["render"]),
++        "b_render_sha256": _digest(arm_contexts["b"]["render"]),
++        "b_difix_output": str(arm_contexts["b"]["target"]),
++        "b_difix_output_sha256": _digest(arm_contexts["b"]["target"]),
++        "reference_image": str(reference_path.resolve()),
++        "reference_image_sha256": _digest(reference_path),
++        "real_target": str(real_target.resolve()),
++        "real_target_sha256": _digest(real_target),
++    }
++    for prefix, arm in (("a1", "a1"), ("b", "b")):
++        for field, value in arm_contexts[arm]["checkpoint_fields"].items():
++            paired_row[f"{prefix}_{field}"] = value
++    paired_manifest.write_text(json.dumps(paired_row, sort_keys=True) + "\n", encoding="utf-8")
++    paired_metadata = {
++        "schema": "paired_identity_manifest_metadata_v4",
++        "passed": True,
++        "paired_manifest": str(paired_manifest.resolve()),
++        "paired_manifest_sha256": _digest(paired_manifest),
++        "record_count": 1,
++        **common_context,
++        "source_images_dir": str(images_dir.resolve()),
++        "source_image_inventory": source_inventory,
++        "source_image_inventory_sha256": source_inventory_sha256,
++        "a1_difix_protocol": difix_protocol,
++        "b_difix_protocol": difix_protocol,
++    }
++    for prefix, arm in (("a1", "a1"), ("b", "b")):
++        context = arm_contexts[arm]
++        paired_metadata.update(
++            {
++                f"{prefix}_evidence_manifest": str(context["evidence_manifest"]),
++                f"{prefix}_evidence_manifest_sha256": _digest(context["evidence_manifest"]),
++                f"{prefix}_difix_manifest": str(context["difix_manifest"]),
++                f"{prefix}_difix_manifest_sha256": _digest(context["difix_manifest"]),
++                f"{prefix}_difix_run_metadata": str(context["difix_metadata"]),
++                f"{prefix}_difix_run_metadata_sha256": _digest(context["difix_metadata"]),
++                f"{prefix}_difix_cache_run_fingerprint": context["cache_metadata"]["cache_run_fingerprint"],
++            }
++        )
++        for field, value in context["checkpoint_fields"].items():
++            paired_metadata[f"{prefix}_{field}"] = value
++    _write_json(paired_manifest.with_suffix(paired_manifest.suffix + ".metadata.json"), paired_metadata)
++
++    for arm in ("A1", "B"):
++        output = root / f"evidence_{arm.lower()}"
++        completed = subprocess.run(
++            [
++                sys.executable,
++                str(Path(__file__).with_name("evaluate_track_evidence.py")),
++                "--track-h5", str(h5_path),
++                "--images-dir", str(images_dir),
++                "--target-manifest", str(paired_manifest),
++                "--paired-arm", arm,
++                "--feature-backend", "rgb",
++                "--device", "cpu",
++                "--window-radii", "32",
++                "--output-dir", str(output),
++            ],
++            check=False,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.STDOUT,
++            text=True,
++        )
++        if completed.returncode != 0:
++            raise RuntimeError(
++                f"{arm} paired evidence evaluator failed:\n{completed.stdout}"
++            )
++        summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
++        for key in (
++            "projection_mean_error", "projection_median_error", "projection_pck3",
++            "projection_pck5", "projection_pck8", "gs_mean_error", "difix_mean_error",
++            "real_reference_mean_error", "difix_vs_projection_error_reduction",
++            "difix_vs_gs_error_reduction",
++        ):
++            assert key in summary
 +
 +
 +def main() -> None:

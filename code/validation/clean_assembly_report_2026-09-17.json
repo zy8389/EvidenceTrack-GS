@@ -1,0 +1,62 @@
+{
+  "schema": "evidencetrack_clean_assembly_v1",
+  "verified_at": "2026-09-17",
+  "pinned_upstream_commit": "81ada6a32c918591ae7c7a0279dc6ca7a8018e2f",
+  "source_package_commit_before_rebuild": "c6ff0b17ff5950c24f6317495082830fe9839a45",
+  "cumulative_patch": {
+    "path": "code/patches/phase2_1_integrity.patch",
+    "sha256": "a05aee6929d95e1eb00997df489de058bbe07429a175688c4c3627df0e687c8a",
+    "bytes": 873574,
+    "file_records": 65,
+    "preserved_or_modified_files": 64,
+    "deleted_files": [
+      "geometric_constraints/adaptive_weighting.py"
+    ],
+    "generated_from_saved_patch": false
+  },
+  "patch_gates": {
+    "core_autocrlf": false,
+    "git_apply_check": "PASS",
+    "git_apply_cached_check_whitespace_error_all": "PASS",
+    "git_diff_check": "PASS",
+    "pre_ast_files_compared": 64,
+    "pre_ast_byte_mismatches": 0
+  },
+  "assembly_gates": {
+    "fresh_bootstrap_runs": 2,
+    "bootstrap_result": "PASS",
+    "intended_final_files_compared": 66,
+    "independent_assembly_byte_mismatches": 0,
+    "overlay_files_compared_with_package": 57,
+    "overlay_byte_mismatches": 0,
+    "excluded_adaptive_weighting_absent": true,
+    "assembled_git_diff_check": "PASS"
+  },
+  "cpu_validation": {
+    "python": "3.10.20",
+    "torch": "2.12.1+cu126",
+    "compileall": "PASS",
+    "pytest": {
+      "passed": 79,
+      "failed": 0
+    },
+    "phase_2_1_smoke": {
+      "passed": 11,
+      "failed": 0
+    },
+    "synthetic_recovery": {
+      "initial_pixel_reprojection_error": 9.751101737106994,
+      "final_pixel_reprojection_error": 0.02762315034759784,
+      "initial_3d_anchor_distance": 0.05385164807134505,
+      "final_3d_anchor_distance": 0.00022591927515800312,
+      "passed": true
+    }
+  },
+  "not_verified": [
+    "Fern CUDA preflight",
+    "real A0/A1/SelfRender/B training",
+    "real Difix inference",
+    "real DINOv2 identity diagnostics",
+    "DTU independent geometry evaluation"
+  ]
+}

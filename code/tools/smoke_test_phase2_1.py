@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import random
 import subprocess
@@ -25,12 +26,32 @@ from build_anchor_tracks_from_colmap import (
     source_quality,
     source_scene_scale,
 )
-from diffusion_guidance.pseudo_manifest import pseudo_view_index
+from diffusion_guidance.pseudo_manifest import load_pseudo_manifest, pseudo_view_index
 from diffusion_guidance.camera_utils import camera_fingerprint_from_payload
-from diffusion_guidance.difix_provenance import (
-    CACHE_IDENTITY_FIELDS,
-    cache_run_fingerprint,
+from diffusion_guidance.checkpoint_state import (
+    FORMAT as CHECKPOINT_FORMAT,
+    RENDER_STATE_SCHEMA,
+    load_checkpoint_summary,
 )
+from diffusion_guidance.control_identity import (
+    PREREGISTERED_CONTROLLED_OPTIMIZATION,
+    controlled_checkpoint_provenance_from_metadata,
+    controlled_checkpoint_provenance_sha256,
+    controlled_pair_id,
+    controlled_training_protocol_sha256,
+    source_camera_set_sha256,
+    source_image_inventory_sha256,
+    training_camera_inventory_sha256,
+)
+from diffusion_guidance.difix_provenance import (
+    A0_PSEUDO_MANIFEST_SCHEMA,
+    CACHE_IDENTITY_FIELDS,
+    HELDOUT_DIAGNOSTIC_MANIFEST_SCHEMA,
+    cache_run_fingerprint,
+    manifest_record_sha256,
+    reproducibility_check_sha256,
+)
+from diffusion_guidance.result_binding import RESULT_BINDING_SCHEMA, read_pair_audit
 from diffusion_guidance.evidence_features import SpatialFeatureMap
 from diffusion_guidance.evidence_matching import (
     choose_hard_shuffled_indices,
@@ -448,50 +469,111 @@ def test_controlled_real_schedule() -> None:
     assert a1 == b
 
 
-def test_evidence_end_to_end(root: Path) -> None:
-    track_xyz = np.asarray(
-        [[0.0, 0.0, 2.5], [0.2, 0.0, 2.5], [-0.2, 0.1, 2.5]],
-        dtype=np.float32,
-    )
-    h5_path = root / "evidence_tracks.h5"
-    write_strict_h5(h5_path, track_xyz)
-    image_y, image_x = np.mgrid[0:120, 0:160]
-    array = np.stack(
-        [image_x / 159.0, image_y / 119.0, (image_x + image_y) / 278.0],
-        axis=-1,
-    )
-    array = np.clip(array * 255.0, 0, 255).astype(np.uint8)
-    for name in ("image_1.png", "image_2.png", "gs.png", "difix.png", "real.png"):
-        Image.fromarray(array).save(root / name)
-    manifest = root / "evidence_manifest.jsonl"
-    import hashlib
-    def digest(path):
-        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-    payload = {
-        "R": np.eye(3).tolist(), "T": [0.0, 0.0, 0.0],
-        "FoVx": 1.0, "FoVy": 1.0, "width": 160, "height": 120,
-        "intrinsics": {"fx": 100.0, "fy": 100.0, "cx": 80.0, "cy": 60.0, "width": 160, "height": 120},
+def _digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_json(path: Path, value: dict) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path.resolve()
+
+
+def _controlled_protocol(role: str, scene: Path, track: Path, start: Path | None) -> dict:
+    iterations = 10000 if role == "A0" else 12000
+    common = {
+        **PREREGISTERED_CONTROLLED_OPTIMIZATION,
+        "iterations": iterations,
+        "experiment_seed": 1,
+        "position_lr_init": 0.00016,
     }
-    key = camera_fingerprint_from_payload(payload, prefix="heldout")
-    difix_manifest = root / "difix_manifest.jsonl"
-    difix_manifest.write_text(
-        json.dumps(
-            {
-                "key": key,
-                "camera": payload,
-                "input": str(root / "gs.png"),
-                "reference_image": str(root / "image_1.png"),
-                "target": str(root / "difix.png"),
-            }
-        )
-        + "\n",
-        encoding="utf-8",
+    return {
+        "schema": "controlled_training_protocol_v1",
+        "model": {
+            "source_path": str(scene),
+            "track_path": str(track),
+            "images": "images",
+            "strict_tracks": True,
+            "strict_source_only_geometry": True,
+        },
+        "optimization": dict(common),
+        "pipeline": {"debug": False},
+        "runtime": {
+            **common,
+            "source_path": str(scene),
+            "track_path": str(track),
+            "start_checkpoint": None if start is None else str(start),
+            "test_iterations": [iterations],
+            "save_iterations": [iterations],
+            "checkpoint_iterations": [iterations],
+            "quiet": False,
+        },
+    }
+
+
+def _checkpoint_state(provenance: dict) -> dict:
+    count = 3
+    core = {
+        "active_sh_degree": 0,
+        "max_sh_degree": 0,
+        "_xyz": torch.tensor(
+            [[0.0, 0.0, 2.5], [0.2, 0.0, 2.5], [-0.2, 0.1, 2.5]],
+            dtype=torch.float32,
+        ),
+        "_features_dc": torch.zeros((count, 1, 3), dtype=torch.float32),
+        "_features_rest": torch.zeros((count, 0, 3), dtype=torch.float32),
+        "_scaling": torch.zeros((count, 3), dtype=torch.float32),
+        "_rotation": torch.zeros((count, 4), dtype=torch.float32),
+        "_opacity": torch.zeros((count, 1), dtype=torch.float32),
+        "max_radii2D": torch.zeros(count, dtype=torch.float32),
+        "xyz_gradient_accum": torch.zeros((count, 1), dtype=torch.float32),
+        "denom": torch.ones((count, 1), dtype=torch.float32),
+    }
+    groups = {
+        "xyz": core["_xyz"],
+        "f_dc": core["_features_dc"],
+        "f_rest": core["_features_rest"],
+        "opacity": core["_opacity"],
+        "scaling": core["_scaling"],
+        "rotation": core["_rotation"],
+    }
+    optimizer_state, optimizer_groups = {}, []
+    for identifier, (name, tensor) in enumerate(groups.items()):
+        optimizer_state[identifier] = {
+            "step": 1,
+            "exp_avg": torch.zeros_like(tensor),
+            "exp_avg_sq": torch.zeros_like(tensor),
+        }
+        optimizer_groups.append({"name": name, "params": [identifier]})
+    return {
+        "format": CHECKPOINT_FORMAT,
+        "core": core,
+        "spatial_lr_scale": 1.0,
+        "optimizer": {"state": optimizer_state, "param_groups": optimizer_groups},
+        "confidence": torch.ones((count, 1), dtype=torch.float32),
+        "init_point": core["_xyz"].clone(),
+        "bg_color": torch.zeros(3, dtype=torch.float32),
+        "python_rng": random.getstate(),
+        "numpy_rng": np.random.get_state(),
+        "torch_rng": torch.get_rng_state(),
+        "cuda_rng": [torch.get_rng_state().clone()],
+        "controlled_provenance": provenance,
+    }
+
+
+def _write_checkpoint(path: Path, iteration: int, provenance: dict) -> dict:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save((_checkpoint_state(provenance), iteration), path)
+    return load_checkpoint_summary(
+        path,
+        expected_iteration=iteration,
+        require_cuda_rng=True,
+        require_controlled_provenance=True,
     )
-    run_metadata = {
-        "manifest": str(difix_manifest.resolve()),
-        "manifest_sha256": digest(difix_manifest),
-        "record_count": 1,
-        "seed": 1,
+
+
+def _cache_protocol() -> dict:
+    return {
         "model_id": "fixture/difix",
         "model_revision": "a" * 40,
         "difix_code_commit": "b" * 40,
@@ -502,74 +584,502 @@ def test_evidence_end_to_end(root: Path) -> None:
         "guidance_scale": 0.0,
         "prompt": "remove degradation",
     }
-    run_metadata["cache_run_fingerprint"] = cache_run_fingerprint(run_metadata)
-    difix_manifest.with_suffix(".jsonl.difix_metadata.json").write_text(
-        json.dumps(run_metadata), encoding="utf-8"
-    )
-    difix_sidecar = {
-        **{field: run_metadata[field] for field in CACHE_IDENTITY_FIELDS},
-        "cache_run_fingerprint": run_metadata["cache_run_fingerprint"],
-        "input_image": str((root / "gs.png").resolve()),
-        "reference_image": str((root / "image_1.png").resolve()),
-        "target_image": str((root / "difix.png").resolve()),
-        "input_sha256": digest(root / "gs.png"),
-        "reference_sha256": digest(root / "image_1.png"),
-        "output_sha256": digest(root / "difix.png"),
-        "camera_fingerprint": key, "resolution": [160, 120],
+
+
+def _write_strict_difix_cache(
+    manifest: Path,
+    record: dict,
+    *,
+    input_path: Path,
+    reference_path: Path,
+    target_path: Path,
+) -> dict:
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")
+    reproducibility = {
+        "passed": True,
+        "camera_fingerprint": record["key"],
+        "input_sha256": _digest(input_path),
+        "reference_sha256": _digest(reference_path),
+        "output_sha256": _digest(target_path),
+        "repeated_output_sha256": _digest(target_path),
+        "mode": "byte_exact",
     }
-    (root / "difix.png.metadata.json").write_text(json.dumps(difix_sidecar), encoding="utf-8")
-    manifest.write_text(
-        json.dumps(
+    metadata = {
+        "manifest_schema": record["manifest_schema"],
+        "manifest": str(manifest.resolve()),
+        "manifest_sha256": _digest(manifest),
+        "record_count": 1,
+        "seed": 1,
+        **_cache_protocol(),
+        "reproducibility_check": reproducibility,
+        "reproducibility_check_sha256": reproducibility_check_sha256(reproducibility),
+    }
+    metadata["cache_run_fingerprint"] = cache_run_fingerprint(metadata)
+    _write_json(manifest.with_suffix(manifest.suffix + ".difix_metadata.json"), metadata)
+    sidecar = {
+        **{field: metadata[field] for field in CACHE_IDENTITY_FIELDS},
+        "cache_run_fingerprint": metadata["cache_run_fingerprint"],
+        "input_image": str(input_path.resolve()),
+        "reference_image": str(reference_path.resolve()),
+        "target_image": str(target_path.resolve()),
+        "input_sha256": _digest(input_path),
+        "reference_sha256": _digest(reference_path),
+        "output_sha256": _digest(target_path),
+        "camera_fingerprint": record["key"],
+        "resolution": [160, 120],
+        "source_manifest_record": record,
+        "source_manifest_record_sha256": manifest_record_sha256(record),
+    }
+    _write_json(target_path.with_suffix(target_path.suffix + ".metadata.json"), sidecar)
+    return metadata
+
+
+def _final_checkpoint_record(path: Path, summary: dict, provenance: dict) -> dict:
+    return {
+        "path": str(path.resolve()),
+        "sha256": _digest(path),
+        "iteration": summary["iteration"],
+        "state_format": summary["format"],
+        "gaussian_count": summary["gaussian_count"],
+        "render_state_schema": summary["render_state_schema"],
+        "render_state_sha256": summary["render_state_sha256"],
+        "controlled_provenance": provenance,
+        "controlled_provenance_sha256": summary["controlled_provenance_sha256"],
+    }
+
+
+def test_evidence_end_to_end(root: Path) -> None:
+    """Exercise v2 Difix, v4 paired identity and v2 checkpoint binding together."""
+    scene = root / "fern"
+    images_dir = scene / "images"
+    images_dir.mkdir(parents=True)
+    h5_path = scene / "tracks.h5"
+    track_xyz = np.asarray(
+        [[0.0, 0.0, 2.5], [0.2, 0.0, 2.5], [-0.2, 0.1, 2.5]],
+        dtype=np.float32,
+    )
+    write_strict_h5(h5_path, track_xyz)
+
+    image_y, image_x = np.mgrid[0:120, 0:160]
+    array = np.stack(
+        [image_x / 159.0, image_y / 119.0, (image_x + image_y) / 278.0],
+        axis=-1,
+    )
+    array = np.clip(array * 255.0, 0, 255).astype(np.uint8)
+    for name in ("image_1.png", "image_2.png", "image_3.png"):
+        Image.fromarray(array).save(images_dir / name)
+
+    source_names = ["image_1", "image_2"]
+    source_inventory = [
+        {
+            "camera_name": name,
+            "path": str((images_dir / f"{name}.png").resolve()),
+            "sha256": _digest(images_dir / f"{name}.png"),
+        }
+        for name in source_names
+    ]
+    source_inventory_sha256 = source_image_inventory_sha256(source_inventory)
+    source_camera_sha256 = source_camera_set_sha256(source_names)
+    source_cameras = []
+    for name, translation in (("image_1", [0.4, 0.0, 0.0]), ("image_2", [-0.4, 0.0, 0.0])):
+        source_cameras.append(
             {
-                "image_name": "image_3.png", "camera_fingerprint": key, "camera": payload,
-                "gs_render": str(root / "gs.png"), "difix_output": str(root / "difix.png"),
-                "real_target": str(root / "real.png"), "reference_image": str(root / "image_1.png"),
-                "gs_render_sha256": digest(root / "gs.png"),
-                "reference_image_sha256": digest(root / "image_1.png"),
-                "real_target_sha256": digest(root / "real.png"),
+                "camera_name": name,
+                "camera": {
+                    "R": np.eye(3).tolist(),
+                    "T": translation,
+                    "FoVx": 1.0,
+                    "FoVy": 1.0,
+                    "width": 160,
+                    "height": 120,
+                    "intrinsics": {
+                        "fx": 100.0,
+                        "fy": 100.0,
+                        "cx": 80.0,
+                        "cy": 60.0,
+                        "width": 160,
+                        "height": 120,
+                    },
+                },
             }
-        ) + "\n",
-        encoding="utf-8",
+        )
+    camera_inventory_sha256 = training_camera_inventory_sha256(source_cameras)
+    strict_geometry = {
+        "strict_tracks": True,
+        "strict_source_only_geometry": True,
+        "strict_track_weight": 0.1,
+        "densify_until_iter": 10000,
+        "mixed_precision": False,
+        "disable_legacy_pseudo_depth": True,
+        "disable_depth_loss": True,
+        "geometry_reg_enabled": False,
+        "use_gt_dca": False,
+    }
+
+    def metadata_for(role: str, start: Path | None, a0_digest: str | None, pseudo: Path | None = None) -> dict:
+        protocol = _controlled_protocol(role, scene.resolve(), h5_path.resolve(), start)
+        return {
+            "role": role,
+            "seed": 1,
+            "checkpoint_iteration": 10000,
+            "final_iteration": 10000 if role == "A0" else 12000,
+            "start_checkpoint": None if start is None else str(start.resolve()),
+            "start_checkpoint_sha256": None if start is None else _digest(start),
+            "start_checkpoint_controlled_provenance_sha256": a0_digest,
+            "scene_source_path": str(scene.resolve()),
+            "track_h5_path": str(h5_path.resolve()),
+            "track_h5_sha256": _digest(h5_path),
+            "source_camera_names": source_names,
+            "source_camera_set_sha256": source_camera_sha256,
+            "source_images_dir": str(images_dir.resolve()),
+            "source_image_inventory": source_inventory,
+            "source_image_inventory_sha256": source_inventory_sha256,
+            "source_training_camera_inventory": source_cameras,
+            "source_training_camera_inventory_sha256": camera_inventory_sha256,
+            "controlled_training_protocol": protocol,
+            "controlled_training_protocol_sha256": controlled_training_protocol_sha256(protocol),
+            "strict_geometry_protocol": strict_geometry,
+            "pseudo_manifest_path": None if pseudo is None else str(pseudo.resolve()),
+            "pseudo_manifest_sha256": None if pseudo is None else _digest(pseudo),
+            "pseudo_camera_pool_sha256": None if pseudo is None else "e" * 64,
+            "pseudo_target_kind": None if pseudo is None else "difix",
+            "pseudo_rgb_strict_cache": pseudo is not None,
+        }
+
+    a0_metadata = metadata_for("A0", None, None)
+    a0_provenance = controlled_checkpoint_provenance_from_metadata(a0_metadata)
+    a0_path = root / "A0" / "chkpnt10000.pth"
+    a0_summary = _write_checkpoint(a0_path, 10000, a0_provenance)
+    a0_digest = a0_summary["controlled_provenance_sha256"]
+
+    heldout_camera = {
+        "R": np.eye(3).tolist(),
+        "T": [0.0, 0.0, 0.0],
+        "FoVx": 1.0,
+        "FoVy": 1.0,
+        "width": 160,
+        "height": 120,
+        "intrinsics": {
+            "fx": 100.0,
+            "fy": 100.0,
+            "cx": 80.0,
+            "cy": 60.0,
+            "width": 160,
+            "height": 120,
+        },
+    }
+    pseudo_key = camera_fingerprint_from_payload(heldout_camera)
+    pseudo_input = root / "A0" / "pseudo_input.png"
+    pseudo_target = root / "B" / "pseudo_target.png"
+    pseudo_target.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(array).save(pseudo_input)
+    Image.fromarray(array).save(pseudo_target)
+    live_pseudo_audit = _write_json(
+        root / "A0" / "live_pseudo_audit.json",
+        {
+            "passed": True,
+            "projection_context_fingerprint": "f" * 64,
+            "track_h5_sha256": _digest(h5_path),
+            "records": [{"camera_fingerprint": pseudo_key}],
+        },
     )
-    output = root / "evidence_output"
-    subprocess.run(
-        [
-            sys.executable,
-            str(Path(__file__).with_name("evaluate_track_evidence.py")),
-            "--track-h5",
-            str(h5_path),
-            "--images-dir",
-            str(root),
-            "--target-manifest",
-            str(manifest),
-            "--feature-backend",
-            "rgb",
-            "--device",
-            "cpu",
-            "--window-radii",
-            "32",
-            "--output-dir",
-            str(output),
-        ],
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+    pseudo_manifest = root / "B" / "pseudo_supervision.jsonl"
+    pseudo_record = {
+        "manifest_schema": A0_PSEUDO_MANIFEST_SCHEMA,
+        "key": pseudo_key,
+        "camera": heldout_camera,
+        "input": str(pseudo_input.resolve()),
+        "reference_image": str((images_dir / "image_1.png").resolve()),
+        "target": str(pseudo_target.resolve()),
+        "supervision_target_kind": "difix",
+        "input_sha256": _digest(pseudo_input),
+        "reference_image_sha256": _digest(images_dir / "image_1.png"),
+        "a0_checkpoint": str(a0_path.resolve()),
+        "a0_checkpoint_sha256": _digest(a0_path),
+        "a0_checkpoint_iteration": 10000,
+        "a0_checkpoint_state_format": a0_summary["format"],
+        "a0_checkpoint_gaussian_count": a0_summary["gaussian_count"],
+        "a0_checkpoint_render_state_schema": a0_summary["render_state_schema"],
+        "a0_checkpoint_render_state_sha256": a0_summary["render_state_sha256"],
+        "a0_checkpoint_controlled_provenance_sha256": a0_digest,
+        "a0_render_state_source": "complete_checkpoint_restore_after_scene_ply_load",
+        "live_pseudo_audit": str(live_pseudo_audit),
+        "live_pseudo_audit_sha256": _digest(live_pseudo_audit),
+        "projection_context_fingerprint": "f" * 64,
+        "track_h5": str(h5_path.resolve()),
+        "track_h5_sha256": _digest(h5_path),
+        "source_camera_names": source_names,
+        "source_camera_set_sha256": source_camera_sha256,
+    }
+    _write_strict_difix_cache(
+        pseudo_manifest,
+        pseudo_record,
+        input_path=pseudo_input,
+        reference_path=images_dir / "image_1.png",
+        target_path=pseudo_target,
     )
-    summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
-    for key in (
-        "projection_mean_error",
-        "projection_median_error",
-        "projection_pck3",
-        "projection_pck5",
-        "projection_pck8",
-        "gs_mean_error",
-        "difix_mean_error",
-        "real_reference_mean_error",
-        "difix_vs_projection_error_reduction",
-        "difix_vs_gs_error_reduction",
-    ):
-        assert key in summary
+    assert len(load_pseudo_manifest(pseudo_manifest, strict_targets=True)) == 1
+
+    a1_metadata = metadata_for("A1", a0_path, a0_digest)
+    b_metadata = metadata_for("B", a0_path, a0_digest, pseudo_manifest)
+    pair_id = controlled_pair_id(a1_metadata)
+    a1_metadata["controlled_pair_id"] = pair_id
+    b_metadata["controlled_pair_id"] = pair_id
+    a1_provenance = controlled_checkpoint_provenance_from_metadata(a1_metadata)
+    b_provenance = controlled_checkpoint_provenance_from_metadata(b_metadata)
+    a1_path = root / "A1" / "chkpnt12000.pth"
+    b_path = root / "B" / "chkpnt12000.pth"
+    a1_summary = _write_checkpoint(a1_path, 12000, a1_provenance)
+    b_summary = _write_checkpoint(b_path, 12000, b_provenance)
+
+    audit = {
+        "audit_schema": RESULT_BINDING_SCHEMA,
+        "passed": True,
+        "failures": [],
+        "pair_id": pair_id,
+        "controlled_pair_id": pair_id,
+        "dataset": "LLFF",
+        "scene": "fern",
+        "role": "development",
+        "seed": 1,
+        "scene_source_path": str(scene.resolve()),
+        "start_checkpoint_path": str(a0_path.resolve()),
+        "start_checkpoint_sha256": _digest(a0_path),
+        "checkpoint_iteration": 10000,
+        "final_iteration": 12000,
+        "track_h5_path": str(h5_path.resolve()),
+        "track_h5_sha256": _digest(h5_path),
+        "source_camera_names": source_names,
+        "source_camera_set_sha256": source_camera_sha256,
+        "source_images_dir": str(images_dir.resolve()),
+        "source_image_inventory": source_inventory,
+        "source_image_inventory_sha256": source_inventory_sha256,
+        "source_training_camera_inventory": source_cameras,
+        "source_training_camera_inventory_sha256": camera_inventory_sha256,
+        "controlled_training_protocol": a1_metadata["controlled_training_protocol"],
+        "controlled_training_protocol_sha256": a1_metadata["controlled_training_protocol_sha256"],
+        "start_checkpoint_controlled_provenance": a0_provenance,
+        "start_checkpoint_controlled_provenance_sha256": a0_digest,
+        "strict_geometry_protocol": strict_geometry,
+        "audited_methods": ["A1", "B"],
+        "audited_contrasts": [["A1", "B"]],
+        "pseudo_validated_methods": ["B"],
+        "final_checkpoints": {
+            "A1": _final_checkpoint_record(a1_path, a1_summary, a1_provenance),
+            "B": _final_checkpoint_record(b_path, b_summary, b_provenance),
+        },
+    }
+    audited_paths = [a0_path, h5_path, images_dir / "image_1.png", images_dir / "image_2.png", a1_path, b_path]
+    audit["audited_input_files"] = [
+        {"path": str(path.resolve()), "sha256": _digest(path)}
+        for path in sorted(audited_paths, key=lambda item: str(item.resolve()))
+    ]
+    audit["audited_input_file_count"] = len(audit["audited_input_files"])
+    audit["audited_input_fingerprint"] = hashlib.sha256(
+        json.dumps(
+            audit["audited_input_files"],
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    audit_path = _write_json(root / "pair_audit.json", audit)
+    _, checked_audit = read_pair_audit(audit_path)
+    assert checked_audit["final_checkpoints"]["B"]["controlled_provenance"] == b_provenance
+
+    common_context = {
+        "dataset": "LLFF",
+        "scene": "fern",
+        "seed": 1,
+        "experiment_role": "development",
+        "scene_source_path": str(scene.resolve()),
+        "controlled_pair_id": pair_id,
+        "pair_audit": str(audit_path),
+        "pair_audit_sha256": _digest(audit_path),
+        "track_h5": str(h5_path.resolve()),
+        "track_h5_sha256": _digest(h5_path),
+        "source_camera_names": source_names,
+        "source_camera_set_sha256": source_camera_sha256,
+    }
+    reference_path = images_dir / "image_1.png"
+    real_target = images_dir / "image_3.png"
+    arm_contexts = {}
+    for arm, checkpoint, summary in (("A1", a1_path, a1_summary), ("B", b_path, b_summary)):
+        arm_dir = root / arm
+        render = arm_dir / "heldout_gs.png"
+        target = arm_dir / "heldout_difix.png"
+        Image.fromarray(array).save(render)
+        Image.fromarray(array).save(target)
+        key = camera_fingerprint_from_payload(heldout_camera, prefix="heldout")
+        checkpoint_fields = {
+            "checkpoint": str(checkpoint.resolve()),
+            "checkpoint_sha256": _digest(checkpoint),
+            "checkpoint_iteration": 12000,
+            "checkpoint_state_format": summary["format"],
+            "checkpoint_gaussian_count": summary["gaussian_count"],
+            "checkpoint_render_state_schema": summary["render_state_schema"],
+            "checkpoint_render_state_sha256": summary["render_state_sha256"],
+            "checkpoint_controlled_provenance_sha256": summary["controlled_provenance_sha256"],
+            "scene_ply_gaussian_count": summary["gaussian_count"],
+            "scene_ply_checkpoint_count_match": True,
+            "scene_ply_render_state_schema": summary["render_state_schema"],
+            "scene_ply_render_state_sha256": summary["render_state_sha256"],
+            "scene_ply_checkpoint_render_state_match": True,
+        }
+        cache_record = {
+            "manifest_schema": HELDOUT_DIAGNOSTIC_MANIFEST_SCHEMA,
+            "key": key,
+            "image_name": "image_3.png",
+            "camera": heldout_camera,
+            "camera_source": "heldout_evaluation_camera",
+            "input": str(render.resolve()),
+            "reference_image": str(reference_path.resolve()),
+            "target": str(target.resolve()),
+            "input_sha256": _digest(render),
+            "reference_image_sha256": _digest(reference_path),
+            **common_context,
+            "paired_identity_arm": arm,
+            **checkpoint_fields,
+        }
+        difix_manifest = arm_dir / "difix_manifest.jsonl"
+        cache_metadata = _write_strict_difix_cache(
+            difix_manifest,
+            cache_record,
+            input_path=render,
+            reference_path=reference_path,
+            target_path=target,
+        )
+        evidence_record = {
+            "manifest_schema": HELDOUT_DIAGNOSTIC_MANIFEST_SCHEMA,
+            "image_name": "image_3.png",
+            "camera_fingerprint": key,
+            "camera": heldout_camera,
+            "camera_source": "heldout_evaluation_camera",
+            "gs_render": str(render.resolve()),
+            "difix_output": str(target.resolve()),
+            "real_target": str(real_target.resolve()),
+            "reference_image": str(reference_path.resolve()),
+            "gs_render_sha256": _digest(render),
+            "reference_image_sha256": _digest(reference_path),
+            "real_target_sha256": _digest(real_target),
+            **common_context,
+            "paired_identity_arm": arm,
+            **checkpoint_fields,
+        }
+        evidence_manifest = arm_dir / "evidence_manifest.jsonl"
+        evidence_manifest.write_text(
+            json.dumps(evidence_record, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        arm_contexts[arm.lower()] = {
+            "evidence_manifest": evidence_manifest.resolve(),
+            "difix_manifest": difix_manifest.resolve(),
+            "difix_metadata": difix_manifest.with_suffix(difix_manifest.suffix + ".difix_metadata.json").resolve(),
+            "cache_metadata": cache_metadata,
+            "checkpoint_fields": checkpoint_fields,
+            "render": render.resolve(),
+            "target": target.resolve(),
+            "key": key,
+        }
+
+    paired_manifest = root / "paired_identity_manifest.jsonl"
+    difix_protocol = {
+        field: arm_contexts["a1"]["cache_metadata"][field]
+        for field in (
+            "model_id", "model_revision", "difix_code_commit", "coordinate_policy",
+            "dtype", "timesteps", "guidance_scale", "prompt",
+        )
+    }
+    paired_row = {
+        "manifest_schema": "paired_identity_manifest_v4",
+        **common_context,
+        "source_images_dir": str(images_dir.resolve()),
+        "source_image_inventory": source_inventory,
+        "source_image_inventory_sha256": source_inventory_sha256,
+        "a1_difix_protocol": difix_protocol,
+        "b_difix_protocol": difix_protocol,
+        "image_name": "image_3.png",
+        "camera": heldout_camera,
+        "camera_fingerprint": arm_contexts["a1"]["key"],
+        "a1_render": str(arm_contexts["a1"]["render"]),
+        "a1_render_sha256": _digest(arm_contexts["a1"]["render"]),
+        "a1_difix_output": str(arm_contexts["a1"]["target"]),
+        "a1_difix_output_sha256": _digest(arm_contexts["a1"]["target"]),
+        "b_render": str(arm_contexts["b"]["render"]),
+        "b_render_sha256": _digest(arm_contexts["b"]["render"]),
+        "b_difix_output": str(arm_contexts["b"]["target"]),
+        "b_difix_output_sha256": _digest(arm_contexts["b"]["target"]),
+        "reference_image": str(reference_path.resolve()),
+        "reference_image_sha256": _digest(reference_path),
+        "real_target": str(real_target.resolve()),
+        "real_target_sha256": _digest(real_target),
+    }
+    for prefix, arm in (("a1", "a1"), ("b", "b")):
+        for field, value in arm_contexts[arm]["checkpoint_fields"].items():
+            paired_row[f"{prefix}_{field}"] = value
+    paired_manifest.write_text(json.dumps(paired_row, sort_keys=True) + "\n", encoding="utf-8")
+    paired_metadata = {
+        "schema": "paired_identity_manifest_metadata_v4",
+        "passed": True,
+        "paired_manifest": str(paired_manifest.resolve()),
+        "paired_manifest_sha256": _digest(paired_manifest),
+        "record_count": 1,
+        **common_context,
+        "source_images_dir": str(images_dir.resolve()),
+        "source_image_inventory": source_inventory,
+        "source_image_inventory_sha256": source_inventory_sha256,
+        "a1_difix_protocol": difix_protocol,
+        "b_difix_protocol": difix_protocol,
+    }
+    for prefix, arm in (("a1", "a1"), ("b", "b")):
+        context = arm_contexts[arm]
+        paired_metadata.update(
+            {
+                f"{prefix}_evidence_manifest": str(context["evidence_manifest"]),
+                f"{prefix}_evidence_manifest_sha256": _digest(context["evidence_manifest"]),
+                f"{prefix}_difix_manifest": str(context["difix_manifest"]),
+                f"{prefix}_difix_manifest_sha256": _digest(context["difix_manifest"]),
+                f"{prefix}_difix_run_metadata": str(context["difix_metadata"]),
+                f"{prefix}_difix_run_metadata_sha256": _digest(context["difix_metadata"]),
+                f"{prefix}_difix_cache_run_fingerprint": context["cache_metadata"]["cache_run_fingerprint"],
+            }
+        )
+        for field, value in context["checkpoint_fields"].items():
+            paired_metadata[f"{prefix}_{field}"] = value
+    _write_json(paired_manifest.with_suffix(paired_manifest.suffix + ".metadata.json"), paired_metadata)
+
+    for arm in ("A1", "B"):
+        output = root / f"evidence_{arm.lower()}"
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).with_name("evaluate_track_evidence.py")),
+                "--track-h5", str(h5_path),
+                "--images-dir", str(images_dir),
+                "--target-manifest", str(paired_manifest),
+                "--paired-arm", arm,
+                "--feature-backend", "rgb",
+                "--device", "cpu",
+                "--window-radii", "32",
+                "--output-dir", str(output),
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"{arm} paired evidence evaluator failed:\n{completed.stdout}"
+            )
+        summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+        for key in (
+            "projection_mean_error", "projection_median_error", "projection_pck3",
+            "projection_pck5", "projection_pck8", "gs_mean_error", "difix_mean_error",
+            "real_reference_mean_error", "difix_vs_projection_error_reduction",
+            "difix_vs_gs_error_reduction",
+        ):
+            assert key in summary
 
 
 def main() -> None:

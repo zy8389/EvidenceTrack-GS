@@ -67,11 +67,20 @@ def compare_camera(
     h5_translation = torch.as_tensor(
         calibration["translation_w2c"], device=anchors.device, dtype=anchors.dtype
     )
+    expected_homogeneous_row = torch.zeros(
+        4, device=anchors.device, dtype=anchors.dtype
+    )
+    expected_homogeneous_row[3] = 1.0
     rotation_difference = float(
         torch.max(torch.abs(live_world_to_camera[:3, :3] - h5_rotation)).item()
     )
     translation_difference = float(
         torch.max(torch.abs(live_world_to_camera[:3, 3] - h5_translation)).item()
+    )
+    homogeneous_difference = float(
+        torch.max(
+            torch.abs(live_world_to_camera[3, :] - expected_homogeneous_row)
+        ).item()
     )
     resolutions = [
         ("original", int(calibration["width"]), int(calibration["height"])),
@@ -103,6 +112,7 @@ def compare_camera(
             "max_pixel_difference": float(delta.max()),
             "rotation_max_abs_difference": rotation_difference,
             "translation_max_abs_difference": translation_difference,
+            "homogeneous_row_max_abs_difference": homogeneous_difference,
             "intrinsics_max_abs_difference": intrinsic_difference,
             "tolerance_px": tolerance,
             "matrix_tolerance": matrix_tolerance,
@@ -110,6 +120,7 @@ def compare_camera(
                 delta.max() <= tolerance
                 and rotation_difference <= matrix_tolerance
                 and translation_difference <= matrix_tolerance
+                and homogeneous_difference <= matrix_tolerance
                 and intrinsic_difference <= matrix_tolerance
             ),
             "path_a": "H5 world_to_camera: R @ X + t; row-vector implementation X @ R.T + t",

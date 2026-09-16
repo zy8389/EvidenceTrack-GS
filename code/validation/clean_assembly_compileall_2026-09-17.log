@@ -1,0 +1,4 @@
+python=E:\Anaconda3\envs\yolo11\python.exe
+PYTHONPATH=.
+command=python -m compileall -q diffusion_guidance geometric_constraints tools tests arguments scene gaussian_renderer train.py utils
+exit_code=0
