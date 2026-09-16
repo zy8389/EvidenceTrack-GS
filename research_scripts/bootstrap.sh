@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
+# LEGACY REPRODUCIBLE PACKAGE ASSEMBLER.
+# This script is not used by the materialized main repository and retains the
+# old package-relative paths only as provenance. For an executable copy, check
+# out the `reproducible-package-2026-09-17` tag and follow its README.
 # Reconstruct the project from immutable upstream + one cumulative patch + overlay.
 # This assembler intentionally performs no compile, test, CUDA, or training work.
 set -euo pipefail
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ ! -d "$HERE/patches" || ! -d "$HERE/scripts" ]]; then
+  echo 'Legacy assembler: not executable from the materialized main repository.' >&2
+  echo 'Check out tag reproducible-package-2026-09-17 to reproduce the package assembly.' >&2
+  exit 2
+fi
 DEST=${1:?Usage: bash scripts/bootstrap.sh /absolute/new/GeoTrack-GS}
 REF=81ada6a32c918591ae7c7a0279dc6ca7a8018e2f
 [[ ! -e "$DEST" ]] || { echo 'Destination must not exist. Your existing work is never overwritten.' >&2; exit 2; }

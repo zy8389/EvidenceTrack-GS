@@ -1,5 +1,7 @@
 # EvidenceTrack-GS
 
+[English](README_en.md)
+
 **面向扩散辅助稀疏视角 Gaussian Splatting 的轨迹身份控制与几何证据诊断。**
 
 这是可直接开发的完整源码仓库。GeoTrack-GS upstream、累计研究补丁、源码覆盖层和受保护 AST 集成已经展开到仓库根目录；后续修改、测试、提交和推送都直接在这里进行，不再需要先运行 `bootstrap.sh`。

@@ -1,6 +1,6 @@
 # Fern precheck and first controlled run
 
-This is the executable order for a **fresh bootstrap-assembled** checkout and a fresh `$RUN` directory. It preserves the preregistered Fern setting: LLFF, three source views, holdout 8, seed 1, A0 at 10k, and A1/SelfRender/B at 12k. Do not reuse a checkpoint, cache, manifest, or gate report from another run.
+This is the executable order for a fresh clone of the **materialized full-source repository** and a fresh `$RUN` directory. It preserves the preregistered Fern setting: LLFF, three source views, holdout 8, seed 1, A0 at 10k, and A1/SelfRender/B at 12k. Do not reuse a checkpoint, cache, manifest, or gate report from another run.
 
 The requested checklist placed camera projection before Track construction. The projection gate compares the live Scene path against the same H5 anchors used by the geometry loss, so those anchors must exist first. The strict executable dependency is therefore:
 
@@ -10,13 +10,14 @@ environment -> tracks -> projection -> live pseudo-camera audit -> CUDA geometry
 
 Every machine-readable gate must contain the exact JSON boolean `passed: true`. Missing, malformed, false, or stale reports stop downstream stages. The Track coverage fields are descriptive, but the combined Track report is a gate because it also records the leakage audit, minimum count, and H5 hash.
 
-## 0. Assemble a clean checkout
+## 0. Clone a clean checkout
 
-From the package's `code` directory:
+Clone the current full-source repository. The legacy `bootstrap.sh` is not part of this workflow.
 
 ```bash
-bash scripts/bootstrap.sh /workspace/GeoTrack-GS-research-v2
-cd /workspace/GeoTrack-GS-research-v2
+git clone https://github.com/zy8389/EvidenceTrack-GS.git
+cd EvidenceTrack-GS
+export PYTHONPATH="$PWD"
 ```
 
 Install the pinned upstream environment and its repository-specific CUDA extensions. Do not substitute similarly named standard 3DGS extensions.
@@ -228,7 +229,7 @@ The aggregator rejects rows whose dataset/scene/seed `pair_id` lacks its own pas
 
 ## Current verification boundary
 
-As of 2026-09-17, the regenerated cumulative patch passed both apply checks (including `--whitespace=error-all`) and `git diff --check`. Two independent fresh bootstrap assemblies completed successfully with zero byte mismatches across 66 target files. The fresh assembled tree passed compileall, 79/79 pytest checks, 11/11 CPU smoke checks, and synthetic recovery. Evidence is stored in `code/validation/clean_assembly_*_2026-09-17.*`.
+As of 2026-09-17, the regenerated cumulative patch passed both apply checks (including `--whitespace=error-all`) and `git diff --check`. Two independent fresh assemblies completed successfully with zero byte mismatches across 66 target files. The materialized full-source tree passed compileall, 79/79 pytest checks, 11/11 CPU smoke checks, and synthetic recovery. Evidence is stored under `validation/`.
 
 The following are still **NOT VERIFIED**:
 
@@ -240,4 +241,4 @@ The following are still **NOT VERIFIED**:
 - confirmatory six-scene statistics and independent DTU geometry evaluation;
 - runtime, peak GPU memory, and final reconstruction metrics.
 
-Older root-level validation files and `code/validation/readme_update_*` are historical snapshots and must not be cited as validation of this revision. A positive B-A1 metric does not isolate the Difix-target replacement, while a positive B-SelfRender metric still does not establish a diffusion-specific mechanism or improved geometry without the planned enhancement control and independent geometry evidence. A passed GPU smoke proves only that the recovery mechanism works under its tested perturbations.
+Files explicitly marked as historical snapshots must not be cited as validation of this revision. A positive B-A1 metric does not isolate the Difix-target replacement, while a positive B-SelfRender metric still does not establish a diffusion-specific mechanism or improved geometry without the planned enhancement control and independent geometry evidence. A passed GPU smoke proves only that the recovery mechanism works under its tested perturbations.
