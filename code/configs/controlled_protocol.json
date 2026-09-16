@@ -1,0 +1,46 @@
+{
+  "revision": "research-v2", "status": "PREREGISTERED_NOT_GPU_VALIDATED",
+  "upstream_commit": "81ada6a32c918591ae7c7a0279dc6ca7a8018e2f",
+  "task": "calibrated sparse-view per-scene reconstruction",
+  "protocol": "source-RGB-only track membership and Gaussian initialization, supplied poses",
+  "n_views": 3, "llff_holdout": 8, "seeds": [1, 2, 3],
+  "development_scenes": ["fern", "room"],
+  "confirmatory_scenes": ["flower", "fortress", "horns", "leaves", "orchids", "trex"],
+  "result_role_required": true,
+  "confirmatory_aggregation_default_role": "confirmatory",
+  "A0_iterations": 10000, "continuation_iterations": 12000,
+  "densify_until_iter": 10000, "pseudo_views": 32,
+  "pseudo_interval": 50, "pseudo_exclusive_start": 10000,
+  "pseudo_exclusive_end": 12000, "expected_pseudo_calls": 39,
+  "expected_unique_views": 32, "source_dssim": 0.2, "track_weight": 0.1,
+  "pseudo_weight": 0.1, "pseudo_dssim": 0.2,
+  "controlled_branches": {
+    "A0": "shared 0-to-10000 source-RGB plus Track checkpoint",
+    "A1": "10000-to-12000 continuation without pseudo-RGB supervision",
+    "SelfRender": "same A0, source schedule, pseudo cameras and pseudo schedule as B; target is the frozen A0 render itself",
+    "B": "same A0 and source schedule; target is the frozen Difix transform of the A0 render"
+  },
+  "required_controlled_contrasts": ["SelfRender-A1", "B-SelfRender", "B-A1"],
+  "pair_audit_binding": "Each dataset/scene/seed A1-SelfRender-B group has a unique pair_id and its own passed pair-audit JSON; an audit from another group cannot authorize aggregation.",
+  "pair_audit_schema": "controlled_result_binding_v5",
+  "controlled_checkpoint_provenance_schema": "controlled_checkpoint_provenance_v2",
+  "heldout_identity_diagnostic_schema": "heldout_identity_diagnostic_v2",
+  "paired_identity_schemas": ["paired_identity_manifest_v4", "paired_identity_manifest_metadata_v4", "paired_identity_association_v4"],
+  "controlled_input_binding": "A0 embeds its canonical input, camera, Track, strict-geometry and full training-parameter provenance inside the 10k checkpoint. Every continuation validates that embedded A0 provenance against its current inputs before training. Each 12k checkpoint embeds the exact parent A0 path/hash/provenance digest; B/SelfRender also embed the strict pseudo-manifest path/hash, camera-pool digest and target kind. Pair-audit v5 rehashes each exact final checkpoint, validates its role and A0/pseudo lineage, and includes it in the audited file inventory. A1/SelfRender/B must match the common input objects and hashes; fixed track/source-DSSIM/pseudo-loss values must equal the preregistered first-run values.",
+  "pre_A0_gate_order": ["environment", "tracks", "projection", "pseudo-live", "smoke"],
+  "post_A0_gate_order": ["recover", "export", "pseudo-audit", "self-manifest", "cache"],
+  "gate_json_policy": "Every machine-readable gate must contain the exact JSON boolean passed=true; missing, false, malformed, or stale reports stop downstream stages.",
+  "projection_gate": {
+    "max_pixel_error": 0.0001,
+    "resolutions": ["original", "training"],
+    "stale_input_policy": "recompute after any Track H5, environment, calibration, source image, protocol dimension, or relevant projection/training code change"
+  },
+  "pseudo_camera_gates": {
+    "pre_A0_live": "audit scene.getPseudoCameras() pose, intrinsics, resize convention and source-camera-only provenance",
+    "post_A0_manifest": "audit the exact 32 exported A0 pseudo-camera records and immutable manifest hash"
+  },
+  "feature_backend": "dinov2_vits14", "feature_radius_pixels": 32,
+  "softmax_temperature": 0.07, "pck_threshold_pixels": [3, 5, 8, 16],
+  "new_learned_adapter": false, "posterior_fusion": false,
+  "legacy_pseudo_depth": false, "final_claim": "No real-scene efficacy claim before evidence gates pass"
+}

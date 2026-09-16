@@ -1,0 +1,6 @@
+# Training-free evidence environment.
+torch
+torchvision
+numpy
+Pillow
+h5py

@@ -1,0 +1,7 @@
+# P0 camera and pseudo-camera gates
+
+`check_camera_projection_equivalence.py` is a **server integration gate**. It compares each source H5 anchor through (A) the H5 world-to-camera `R @ X + t` calibration and (B) the exact `project_points_pixel` branch used by the live geometry loss, including upstream `world_view_transform.T`. It checks native H5 and resized training resolutions, records mean/median/max pixel deltas and fails when max error exceeds the precommitted `1e-4 px` tolerance. This verifies the required row/column, transpose and translation convention rather than expanding a tolerance to hide mismatch.
+
+`export_pseudo_views.py` records each pseudo camera’s ID, pose, complete intrinsics, dimensions and fingerprint. `audit_pseudo_camera_manifest.py` rejects missing or inconsistent fields. We inspected the pinned upstream commit: its LLFF and 360 pose generators receive `self.train_cameras` only. The calibration guard now attaches `source_camera_interpolation_only` provenance and explicitly applies the first source camera’s full `fx`, `fy`, `cx`, `cy`, dimensions and half-pixel resize convention to every pseudo camera.
+
+This establishes that the pseudo-camera trajectory is derived from source cameras in the pinned implementation; it does not make pseudo RGB an independent physical observation. The paper should continue to describe the setting as **source-RGB-only geometry conditional on supplied calibration**.

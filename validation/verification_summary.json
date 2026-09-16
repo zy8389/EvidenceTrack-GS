@@ -1,0 +1,44 @@
+{
+  "artifact_date": "2026-09-06",
+  "artifact_status": "HISTORICAL_OLD_SOURCE_SNAPSHOT",
+  "current_source_validated": false,
+  "current_runtime_status": "NOT RUN / NOT VERIFIED",
+  "revision": "research-v2",
+  "upstream_commit": "81ada6a32c918591ae7c7a0279dc6ca7a8018e2f",
+  "measured": {
+    "pytest_passed": 23,
+    "smoke_checks_passed": 11,
+    "synthetic_point_recovery": {
+      "initial_pixel_reprojection_error": 9.751101737106994,
+      "final_pixel_reprojection_error": 0.02762315034761743,
+      "initial_3d_anchor_distance": 0.05385164807134505,
+      "final_3d_anchor_distance": 0.000225919275158039,
+      "passed": true
+    }
+  },
+  "packaged": {
+    "main_pdf_pages": 11,
+    "chinese_handbook_pages": 13,
+    "experiment_registry_items": 62,
+    "primary_llff_run_rows": 72
+  },
+  "visual_qa": {
+    "main_pdf": "11 pages rendered and inspected",
+    "chinese_docx": "13 pages rendered and inspected",
+    "svg_figures": "3 schematics inspected",
+    "workbook": "Overview rendered; formula error scan and counts checked"
+  },
+  "not_run": [
+    "Full upstream clone/assembly",
+    "CUDA extension compilation",
+    "Real-scene A0/A1/B training",
+    "Actual Difix inference",
+    "Actual DINOv2 inference",
+    "Independent DTU geometry",
+    "GPU timing and memory",
+    "External independent review"
+  ],
+  "reviews": "Three simulated perspectives from the same assistant; not external reviews",
+  "result_policy": "Real reconstruction metrics are NR (not run), never synthesized",
+  "code_scope": "Research source overlay + cumulative patch + pinned bootstrap. Upstream unmodified files, datasets, weights and binaries are not bundled."
+}

@@ -1,0 +1,63 @@
+﻿ID,优先级,阶段,实验名称,要回答的问题,前置依赖,执行入口,判定与记录要求,实现状态,运行状态,证据文件
+G01,P0,完整性,历史11项smoke快照与当前重跑,基础strict / evidence / schedule能否运行,无,scripts/run_cpu.sh,历史快照为11/11；当前源码须重新运行；Mock不是实际Difix,已有CPU测试入口,当前源码NOT RUN,validation/smoke_phase21.log（历史源码快照）
+G02,P0,完整性,历史23项regression快照与当前重跑,坐标、尺度、配对和checkpoint局部实现,无,pytest tests -q,历史快照为23/23；当前源码须重新运行；不替代GPU集成,已有CPU测试入口,当前源码NOT RUN,validation/regression_tests.log（历史源码快照）
+G03,P0,完整性,单点合成恢复,多相机源约束能否恢复扰动点,无,test_geometry_recovery.py --synthetic-smoke,历史快照曾记录9.7511→0.0276px；当前源码须重跑；只验证单点,已有CPU测试入口,当前源码NOT RUN,validation/synthetic_recovery.json（历史源码快照）
+G04,P0,完整性,完整上游装配,固定SHA与累计补丁能否真实装配,无,scripts/bootstrap.sh,禁止fuzzy；保存git diff及revision marker,已有入口,待服务器,NR
+G05,P0,完整性,CUDA扩展编译,本仓库rasterizer/simple-knn接口一致,G04,教程第3节,导入成功；保存torch/CUDA/compiler版本,已有入口,待服务器,NR
+G06,P0,完整性,实际相机投影一致,renderer与Track是否同一像素坐标,G05;G08,run_stage.sh projection,original/training分辨率均须max error≤1e-4px；报告passed=true且输入指纹未陈旧,已有fail-closed服务器门禁,待服务器,NR
+G07,P0,完整性,源图尺寸与去畸变,像素坐标是否对应给定校准,G04,数据检查,camera模型和RGB尺寸一致；不默默忽略distortion,人工数据门禁,待服务器,NR
+G08,P0,完整性,Strict membership审计,只使用source-source匹配,G05;G07,run_stage.sh tracks,无full points3D membership；最少32条；覆盖报告、H5 hash和passed=true,已有入口,待服务器,NR
+G09,P0,完整性,held-out替换等价,目标图是否间接影响训练,G08,删除/替换held-out后比较source store与短训,训练张量/源采样相同；评估标签允许变化,待加完整训练对照驱动,待服务器,NR
+G10,P0,完整性,真实Gaussian梯度,Track loss是否作用于当前μ,G06;G08,run_stage.sh smoke,投影与live pseudo门禁当前有效；有限非零梯度；空loss不得成功；写passed=true,已有入口,待服务器,NR
+G11,P0,完整性,零监督与退化失败,是否隐藏无效几何,G10,pytest与人工退化数据,零权重/退化信息明确失败；不记为好结果,局部测试已有，真实场景待跑,待服务器,NR
+G12,P0,完整性,真实checkpoint恢复,Adam与辅助状态是否完整,G10,A0→复制状态→短续跑比对,v2格式；旧tuple拒绝；最终更新后存储,CPU fixture已有，GPU驱动待补,待服务器,NR
+G13,P0,完整性,更新后评测一致,日志与保存的PLY/checkpoint是否同一步,G12,重载final checkpoint独立渲染,PSNR/SSIM/LPIPS与更新后日志一致,待加重载一致性脚本,待服务器,NR
+G14,P0,完整性,真实Difix重复推理,actual model是否达到像素容差,G05;G21,run_stage.sh cache,重复推理；记录精确/容差模式和模型hash,已有入口,待服务器,NR
+G15,P0,完整性,缓存版本与画幅,是否混旧图或改坐标,G14,run_stage.sh cache,输入/参考/输出hash、model revision/code commit、分辨率、32camera唯一且reproducibility_check.passed=true,已有入口,待服务器,NR
+G16,P0,完整性,实际A1/SelfRender/B条件配对,训练分支是否只改变指定的pseudo target条件,G24;G25;G30,run_stage.sh pair-self; pair-b; pair-pseudo,同起点hash、同2000 source序列；伪监督分支均39calls/32views；SelfRender/B camera keys与schedule完全相同；每个scene/seed报告passed=true,已有入口,待服务器,NR
+G17,P0,完整性,多尺度真实数据复跑,局部尺度不变能否延伸实际工程,G10,场景与translation共同×10,报告quality差、梯度和输出差；不要求逐位同,待加数据变换驱动,待服务器,NR
+G18,P0,完整性,代理对应标签审计,SIFT heldout标签有多少误配,G08,每场景固定随机抽100条人工核验,可见/遮挡/重复纹理分层；发布核验规则,人工标注任务,待服务器,NR
+G19,P0,完整性,代码与权重锁,所有依赖是否可追溯,G05;G14,collect_environment.py＋sha256sum,DINO权重也需hash；环境记录归档,已有入口,待服务器,NR
+G20,P0,完整性,匿名与许可证,能否作为匿名补充材料,全部关键实验,人工发布前审计,保留第三方许可；移除私有路径和身份,投稿前人工审计,待实验,NR
+G21,P1,受控主实验,开发场景A0,构建共同10k基线,G10,run_stage.sh A0,fern/room；source RGB+track；记录全部配置,已有入口,待服务器,NR
+G22,P1,受控主实验,实际anchor恢复,已训练高斯可否受轨迹纠正,G21,run_stage.sh recover,0.005/0.01/0.02尺度扰动；保留失败；只读原ckpt,已有入口,待服务器,NR
+G23,P1,受控主实验,固定32视图导出,cache是否仅由共同A0产生,G21,run_stage.sh export; pseudo-audit,source参考；恰好32个唯一camera fingerprints；pose/intrinsics/provenance及manifest hash门禁passed=true,已有入口,待服务器,NR
+G24,P1,受控主实验,A1正常2k续训,单纯更多训练带来多少改善,G21,run_stage.sh A1,与SelfRender/B相同起点和source序列、冻结拓扑,已有入口,待服务器,NR
+G25,P1,受控主实验,B冻结Difix2k续训,在相同pseudo-view监督下，冻结Difix target替换冻结A0 self-render target是否额外有效；B-SelfRender是主target替换对照，B-A1仅是总分支效应，扩散机制独有性仍需G31,G14;G23;G30,run_stage.sh B,39次call；32unique；pseudo camera、调用序列、loss和权重与SelfRender一致，起点与source序列同时和A1一致,已有入口,待服务器,NR
+G26,P1,受控主实验,开发三seed重复,观察收益方向是否稳定,G16,"seeds 1,2,3重复G21-G25及G30",fern/room仅作开发，不用于确认性结论,已有入口,待服务器,NR
+G27,P1,受控主实验,LLFF确认性六场景,未调参场景上是否有效,G26;参数锁定,主运行矩阵,主LLFF矩阵共96项，其中六个确认性场景为72项；先锁阈值；逐scene/seed审计且不删失败scene,已有入口,待服务器,NR
+G28,P1,受控主实验,scene级配对统计,收益是否超出跨scene差异,G27,aggregate_results.py,每行绑定本scene/seed pair_id与passed audit；先均值seed再bootstrap scene；默认只取confirmatory，不足scene不报CI,已有入口,待服务器,NR
+G29,P1,受控主实验,无Track同初始化基线,提升是否真正来自Track loss,G21,手动对称去除track项,保留source-only初始化与总预算,现有参数可控，需独立配置,待服务器,NR
+G30,P1,受控主实验,Self-render缓存控制,额外伪监督本身是否产生效果,G23,run_stage.sh self-manifest; SelfRender; pair-self; pair-pseudo,同A0、32 cameras、50间隔、39 calls、source序列和loss权重；target严格为A0 render；不称Difix分支,已有受控分支和审计入口,待服务器,NR
+G31,P1,受控主实验,非生成增强控制,是否只是锐化改善,G23,固定简单增强生成cache,相同target分辨率、预算；记录算法参数,需补非生成cache驱动,待服务器,NR
+G32,P1,受控主实验,独立DTU几何,感知改善是否损害三维结构,G28;G18,DTU官方评估流程,校准/mask/单位/重建表示映射明确,官方评估适配尚待完成,待服务器,NR
+G33,P1,受控主实验,新视角与训练视角分离,是否只提高source拟合,G24;G25,train/test分开记录,不把训练视角指标当NVS效果,已有入口,待服务器,NR
+G34,P2,身份诊断,GS/Difix/Real同域导出,三类target比较是否可配对,G24;G14,run_stage.sh evidence-export-a1/evidence-export-b; evidence-cache-a1/evidence-cache-b,同尺寸、同camera、reference只用source,已有入口,待服务器,NR
+G35,P2,身份诊断,DINO正确身份匹配,source descriptor是否有效，并且B最终GS重建是否在同一paired support上具有强于A1的identity-consistent evidence,G34;G19,run_stage.sh identity-a1; identity-b; identity-report,真实DINO；记录token stride及输入尺寸；A1/B使用完全相同的paired support；主比较来自最终GS render，并报告failure-aware correct-query error、有效局部identity margin及全部失败计数,已有入口,待服务器,NR
+G36,P2,身份诊断,ProjectionOnly,生成匹配是否优于现有几何,G35,paired_evidence_report.py,必须报告geometry-relative gain，不只matching误差,已有入口,待服务器,NR
+G37,P2,身份诊断,局部hard wrong身份,是否真正利用Track identity,G35,evaluate_track_evidence.py,同局部窗口；无不同ID时记无效，不self冒充,已有入口,待服务器,NR
+G38,P2,身份诊断,全局轮换身份控制,特定source query是否有作用,G35,global_shuffle字段,至少两条track；明确derangement构造,已有入口,待服务器,NR
+G39,P2,身份诊断,随机query控制,是否由一般相似度偶然成功,G35,random_query字段,seed20260906；同候选support,已有入口,待服务器,NR
+G40,P2,身份诊断,均匀window控制,是否仅因窗口中心接近真值,G35,uniform_query字段,uniform softargmax与ProjectionOnly同时报告,已有入口,待服务器,NR
+G41,P2,身份诊断,failure-aware配对,失败是否被丢掉,G35,run_stage.sh identity-a1; identity-b; identity-report,PCK全分母、对角线惩罚、缺方法报错,已有入口,待服务器,NR
+G42,P2,身份诊断,GT-in-window位移诊断,局部可恢复性如何,G35,shift 4/8/16字段,secondary oracle-conditioned，报告eligible数,已有入口,待服务器,NR
+G43,P2,身份诊断,非oracle位移鲁棒性,真实扰动下是否有效,G42,不筛GT-inside全部评估,失败也入分母；勿借用proxy选样本,需补无筛选导出分支,待服务器,NR
+G44,P2,身份诊断,弱纹理/遮挡分层,proxy是否仅覆盖容易区域,G18;G35,按人工标签/coverage分组,预先固定分层规则；保留空组,分析脚本待扩展,待服务器,NR
+G45,P2,身份诊断,错误身份margin与重建收益,两个证据是否同向,G28;G41,场景级关联分析,只称关联，不当已证中介因果,统计分析待补,待服务器,NR
+G46,P3,消融与拓展,Track权重,0/.03/.1/.3敏感性,G28,独立配置对照,无Track使用专门baseline，不突破strict零权重guard,需独立baseline配置,待服务器,NR
+G47,P3,消融与拓展,Pseudo权重,0/.03/.1/.3的影响,G28,独立配置对照,0对应A1；其他统一source序列,已有入口,待服务器,NR
+G48,P3,消融与拓展,搜索半径,16/32/48是否改变结论,G41,--window-radii,主radius32锁定；其他为鲁棒性,已有入口,待服务器,NR
+G49,P3,消融与拓展,温度,0.03/0.07/0.15是否稳定,G41,--temperature,熵不是校准正确率,已有入口,待服务器,NR
+G50,P3,消融与拓展,池大小与频率,8/16/32/64与25/50/100,G28,非首轮controlled配置,调用数、coverage、总算力共同报告,需独立对称配置,待服务器,NR
+G51,P3,消融与拓展,质量项消融,长度/残差/无量纲不确定性各自贡献,G28,固定q组件的source-only构建,全部基于source；不得按heldout调q,需补构建开关,待服务器,NR
+G52,P3,消融与拓展,关联碰撞率,many-to-one是否降低有效约束,G22,现有日志＋阈值敏感性,记录唯一Gaussian数，不能只报track数,已有入口,待服务器,NR
+G53,P3,消融与拓展,3/6/9视角,结论是否仅限最稀疏情况,G28,VIEWS=3/6/9,使用不同source split hash；预算声明,已有入口,待服务器,NR
+G54,P3,消融与拓展,源视图选择鲁棒性,固定3图是否偶然好,G28,替代source名单,保持heldout冻结，不按测试效果选择图,需明确替代split驱动,待服务器,NR
+G55,P3,消融与拓展,伪相机位置鲁棒性,生成路径是否过于有利,G28,source-only路径配置,不可利用heldout RGB选择路径,需补路径配置,待服务器,NR
+G56,P3,消融与拓展,恢复拓扑更新,冻结拓扑结论能否外推,G28,双方对称densification,独立非首轮角色；checkpoint状态一致,需独立对称配置,待服务器,NR
+G57,P3,消融与拓展,Mip360拓展,无界场景适用性,G28,独立数据适配,先验证pseudo-camera合法，不直接跑全部,数据协议适配待做,待服务器,NR
+G58,P3,消融与拓展,相关方法公平对照,与Difix/HAD等差异是否真实,G32,各官方复现仓库,区分pose、预训练、budget与任务；不混文献分数,外部基线未包含,待服务器,NR
+G59,P4,效率与交付,训练/缓存/诊断时间,总成本到底多少,G28;G41,同步CUDA计时,三部分分别统计，缓存不计为免费,计时驱动待补,待服务器,NR
+G60,P4,效率与交付,峰值显存与Gaussian数,硬件负担与表示规模,G59,日志＋torch CUDA memory,显存reset/max与测量区间明确,计时驱动待补,待服务器,NR
+G61,P4,效率与交付,失败案例图库,什么时候方法失败,G28;G41,固定选取规则,最大regression＋固定随机样本，不只挑好图,需真实输出后制作,待服务器,NR
+G62,P4,效率与交付,匿名重现包验收,另一环境能否复现同结果,全部核心实验,干净服务器复跑,固定依赖、hash、命令、README；最终材料匿名,待真实环境,待服务器,NR

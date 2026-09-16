@@ -1,0 +1,2 @@
+# The delivery manifest verifies exact file bytes. Do not apply line-ending conversion.
+* -text

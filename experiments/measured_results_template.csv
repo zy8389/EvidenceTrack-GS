@@ -1,0 +1,1 @@
+dataset,scene,role,seed,method,psnr,ssim,lpips,pair_id,pair_audit_path,pair_audit_sha256,geometry_error,metric_log,metric_log_sha256

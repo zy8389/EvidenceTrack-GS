@@ -1,0 +1,20 @@
+[Strict Track Association] Active Tracks: 3
+[Strict Track Association] Associated Tracks: 3
+[Strict Track Association] Unique Associated Gaussians: 2
+[Strict Track Association] Association Collision Rate: 0.3333333333333333
+[Strict Track Association] Mean Association Distance: 0.0003333333588670939
+[Strict Track Association] P95 Association Distance: 0.0009000000427477062
+[Strict Track Association] Rejected Associations: 0
+[Strict Track Association] WARNING: collision rate is high. Report it before considering unique assignment, a stricter distance threshold, or best-quality track filtering. Hungarian matching is not enabled in Phase 2.1.
+PASS: strict held-out anchor invariance
+PASS: leakage audit + collision + gradient
+PASS: Projection/GS/Difix/Real evidence end-to-end
+PASS: source RGB-only Track membership
+PASS: dimensionless quality scale invariance
+PASS: resolution-aware PCK + non-trivial shift window
+PASS: hard shuffled negatives
+PASS: Difix exact-or-tolerance reproducibility
+PASS: 32-view Difix pool coverage at interval 50
+PASS: A1/B identical real-view schedule
+PASS: geometry recovery functional synthetic
+PHASE 2.1 CPU SMOKE TESTS: 11/11 PASS
