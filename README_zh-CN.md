@@ -4,7 +4,7 @@
 
 > **核心问题：** Diffusion 让 novel view 看起来更好之后，这种提升是否真的包含与正确 source-track identity 一致的几何收益，还是仅仅来自外观增强、局部投影先验、额外训练或选择性匹配成功？
 
-[English README](README.md)
+[English README](README_en.md)
 
 ## 当前状态
 
