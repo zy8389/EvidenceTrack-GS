@@ -2,7 +2,7 @@
 
 This directory contains the complete research changes for the pinned GeoTrack-GS revision, not an offline copy of upstream. See the accompanying Chinese tutorial.
 
-CPU checks: `pip install -r requirements-cpu.txt` then `bash scripts/run_cpu.sh`. The repaired source has not been tested in this turn at the user's request. Existing 11/23 logs are historical evidence for an earlier source snapshot, not validation of the current repair.
+CPU checks: `pip install -r requirements-cpu.txt` then `bash scripts/run_cpu.sh`. The current repaired source has passed the packaged CPU validation suite: **11/11 Phase-2.1 smoke checks, 79/79 pytest regression tests, and the synthetic three-camera recovery test**. The corresponding repaired-source logs are stored under `code/validation/repair_*`. These checks validate the CPU protocol and synthetic mechanism only; the full CUDA installation, real Fern reconstruction, real Difix/DINOv2 inference, and independent geometry evaluation remain `NOT VERIFIED`.
 
 Full assembly: `bash scripts/bootstrap.sh /absolute/new/GeoTrack-GS-research-v2`. The destination must not exist. The upstream commit is `81ada6a32c918591ae7c7a0279dc6ca7a8018e2f`. Assembly has one fixed order: apply the cumulative **pre-AST** patch, copy the source overlay, then run the guarded AST integration only on upstream-owned files. The overlay itself owns the calibrated tools, so it is not structurally rewritten a second time. Bootstrap deliberately does **not** run compile, CPU, CUDA, or environment checks; begin the documented gate sequence explicitly. Do not stack old Phase 2/2.1 patches.
 
