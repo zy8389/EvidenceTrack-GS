@@ -12,7 +12,7 @@ HOLDOUT=${HOLDOUT:-8}
 EXPECTED_UPSTREAM_COMMIT=81ada6a32c918591ae7c7a0279dc6ca7a8018e2f
 
 [[ -f .research_revision_v2.json && -f train.py ]] || {
-  echo 'Run from the bootstrap-assembled repository' >&2
+  echo 'Run from the materialized full-source repository' >&2
   exit 2
 }
 export PYTHONPATH="$PWD:${PYTHONPATH:-}"
@@ -91,6 +91,23 @@ run_logged() {
     die "Training command failed with status ${statuses[0]}; log retained at $log_path"
   }
   require_file "$log_path" "training log"
+}
+
+require_completed_training_runs() {
+  local path status
+  for path in "$A0" "$A1" "$SELF" "$B"; do
+    [[ -f "$path/run_status.json" ]] || die "Training run has no run_status.json; refusing metrics/integrity: $path"
+    status=$(python - "$path/run_status.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(payload.get("status", "UNKNOWN"))
+PY
+)
+    [[ "$status" == "COMPLETED" ]] || die "Training run is not COMPLETED ($status); refusing metrics/integrity: $path"
+  done
 }
 
 require_json_object() {
@@ -1105,9 +1122,11 @@ PY
     refresh_identity_association
     ;;
   metrics)
+    require_completed_training_runs
     generate_contrast_metrics
     ;;
   integrity)
+    require_completed_training_runs
     require_environment_gate
     require_track_gate
     require_projection_gate

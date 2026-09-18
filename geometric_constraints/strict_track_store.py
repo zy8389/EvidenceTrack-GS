@@ -1,7 +1,7 @@
 """Strict source-only track storage and leakage auditing.
 
-The strict format is deliberately incompatible with the legacy GeoTrack-GS H5
-files.  A strict file proves its anchors, covariance, quality and point-cloud
+The strict format is deliberately incompatible with legacy upstream H5 files.
+A strict file proves its anchors, covariance, quality and point-cloud
 initialisation were all derived only from the declared source observations.
 Held-out observations may be retained only as evaluation labels.
 """

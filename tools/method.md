@@ -1,4 +1,4 @@
-# GeoTrack-GS 轨迹生成工具兼容性报告
+# EvidenceTrack-GS 轨迹生成工具兼容性报告
 
 ## 兼容性状态
 

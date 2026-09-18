@@ -1,4 +1,4 @@
-# Separate frozen-Difix cache environment; keep out of the legacy GeoTrack CUDA env.
+# Separate frozen-Difix cache environment; keep it out of the main CUDA env.
 torch
 torchvision
 torchmetrics

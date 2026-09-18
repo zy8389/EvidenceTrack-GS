@@ -55,7 +55,7 @@ class ModelParams(ParamGroup):
         self.data_device = "cuda"
         self.eval = False
         self.n_views = 0
-        # --- GeoTrack-GS: 新增模型与数据相关参数 ---
+        # --- EvidenceTrack-GS model and data parameters ---
         self.track_path = "tracks.h5"  # 预计算的特征轨迹文件路径
         # Phase 2.1 protocols.  Legacy remains the default for benchmark
         # reproduction; strict mode fails closed unless a v4 source-RGB-membership H5 is
@@ -132,7 +132,7 @@ class OptimizationParams(ParamGroup):
         self.controlled_ab_checkpoint_iteration = 10000
 
         # Frozen, manifest-driven Difix pseudo RGB.  No diffusion module is
-        # imported into the GeoTrack-GS training environment.
+        # imported into the EvidenceTrack-GS training environment.
         self.enable_diffusion_pseudo_rgb = False
         self.pseudo_rgb_manifest = ""
         self.pseudo_rgb_weight = 0.10
@@ -142,7 +142,7 @@ class OptimizationParams(ParamGroup):
         self.pseudo_rgb_interval = 50
         self.pseudo_rgb_strict_cache = False
         self.disable_legacy_pseudo_depth = False
-        # --- GeoTrack-GS: 新增优化与损失相关参数 ---
+        # --- EvidenceTrack-GS optimization and loss parameters ---
         self.use_hybrid_loss = False  # 启用混合几何损失模型
         self.disable_depth_loss = False  # 完全禁用原有的深度损失 (用于消融实验)
         self.lambda_reproj = 0.1  # [如果不用动态加权] 全局重投影损失的静态权重

@@ -1,4 +1,4 @@
-name: GeoTrack-GS
+name: evidencetrack-gs
 channels:
   - pytorch
   - conda-forge

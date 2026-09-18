@@ -4,7 +4,7 @@
 
 **面向扩散辅助稀疏视角 Gaussian Splatting 的轨迹身份控制与几何证据诊断。**
 
-这是可直接开发的完整源码仓库。GeoTrack-GS upstream、累计研究补丁、源码覆盖层和受保护 AST 集成已经展开到仓库根目录；后续修改、测试、提交和推送都直接在这里进行，不再需要先运行 `bootstrap.sh`。
+这是可直接开发的完整源码仓库。固定 upstream 源码、累计研究补丁、源码覆盖层和受保护 AST 集成已经展开到仓库根目录；后续修改、测试、提交和推送都直接在这里进行，不再需要先运行 `bootstrap.sh`。
 
 ## 当前状态
 
@@ -14,7 +14,7 @@
 | Patch 门禁 | 通过：apply、cached whitespace、diff check |
 | Python compileall | 通过 |
 | Phase-2.1 CPU smoke | 11 / 11 通过 |
-| Regression tests | 79 / 79 通过 |
+| Regression tests | 82 / 82 通过 |
 | 三相机合成恢复 | 通过 |
 | Fern CUDA preflight | 未运行 |
 | A0 / A1 / SelfRender / B | 未运行 |
@@ -27,8 +27,9 @@
 克隆完整仓库：
 
 ```bash
-git clone https://github.com/zy8389/EvidenceTrack-GS.git
+git clone --recurse-submodules https://github.com/zy8389/EvidenceTrack-GS.git
 cd EvidenceTrack-GS
+# CUDA 扩展源码已直接跟踪；--recurse-submodules 仅兼容未来依赖。
 ```
 
 安装 CPU 检查依赖并运行门禁：
@@ -51,6 +52,8 @@ python tools/smoke_test_phase2_1.py
 ```
 
 真实实验从 [`research_docs/FERN_PRECHECK_AND_RUN.md`](research_docs/FERN_PRECHECK_AND_RUN.md) 开始，并使用 `research_scripts/run_stage.sh`。任何 P0 门禁失败都应停止后续 GPU 计算。
+
+训练输出会写入 `run_status.json`；只有 A0、A1、SelfRender、B 全部为 `COMPLETED` 的目录才能进入 metrics/integrity，缺失或 `INVALID` 的 run 会被拒绝。
 
 ## 研究结构
 

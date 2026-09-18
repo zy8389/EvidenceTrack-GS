@@ -4,7 +4,7 @@
 
 **Identity-controlled geometry diagnostics for diffusion-assisted sparse-view Gaussian Splatting.**
 
-This is a materialized full-source repository ready for direct development. The GeoTrack-GS upstream source, cumulative research patch, source overlay, and guarded AST integration are present at the repository root. Future changes, tests, commits, and pushes should be made here; `bootstrap.sh` is no longer part of the normal workflow.
+This is a materialized full-source repository ready for direct development. The pinned upstream source, cumulative research patch, source overlay, and guarded AST integration are present at the repository root. Future changes, tests, commits, and pushes should be made here; `bootstrap.sh` is no longer part of the normal workflow.
 
 ## Current status
 
@@ -14,7 +14,7 @@ This is a materialized full-source repository ready for direct development. The 
 | Patch gates | Passed: apply, cached whitespace, and diff checks |
 | Python compileall | Passed |
 | Phase-2.1 CPU smoke | 11 / 11 passed |
-| Regression tests | 79 / 79 passed |
+| Regression tests | 82 / 82 passed |
 | Synthetic three-camera recovery | Passed |
 | Fern CUDA preflight | Not run |
 | A0 / A1 / SelfRender / B | Not run |
@@ -27,8 +27,9 @@ Validation reports and raw logs are under [`validation/`](validation/). The curr
 Clone the full repository:
 
 ```bash
-git clone https://github.com/zy8389/EvidenceTrack-GS.git
+git clone --recurse-submodules https://github.com/zy8389/EvidenceTrack-GS.git
 cd EvidenceTrack-GS
+# CUDA sources are tracked directly; --recurse-submodules is retained for future dependencies.
 ```
 
 Install the CPU-check dependencies and run the gates:
@@ -51,6 +52,8 @@ python tools/smoke_test_phase2_1.py
 ```
 
 Start real experiments with [`research_docs/FERN_PRECHECK_AND_RUN.md`](research_docs/FERN_PRECHECK_AND_RUN.md) and `research_scripts/run_stage.sh`. Stop downstream GPU work if any P0 gate fails.
+
+Each training output writes `run_status.json`. Metrics and integrity require A0, A1, SelfRender, and B to be `COMPLETED`; missing, `RUNNING`, or `INVALID` runs are rejected.
 
 ## Research structure
 

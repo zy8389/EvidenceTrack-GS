@@ -1,4 +1,4 @@
-"""GeoTrack geometric constraints with lazy legacy imports."""
+"""EvidenceTrack-GS geometry constraints with lazy legacy imports."""
 
 from __future__ import annotations
 

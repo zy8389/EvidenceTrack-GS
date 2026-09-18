@@ -15,9 +15,10 @@ Every machine-readable gate must contain the exact JSON boolean `passed: true`. 
 Clone the current full-source repository. The legacy `bootstrap.sh` is not part of this workflow.
 
 ```bash
-git clone https://github.com/zy8389/EvidenceTrack-GS.git
+git clone --recurse-submodules https://github.com/zy8389/EvidenceTrack-GS.git
 cd EvidenceTrack-GS
 export PYTHONPATH="$PWD"
+# Rasterizer and simple-knn sources are tracked; the recurse flag is for future dependencies.
 ```
 
 Install the pinned upstream environment and its repository-specific CUDA extensions. Do not substitute similarly named standard 3DGS extensions.
@@ -48,7 +49,7 @@ mkdir -p "$RUN"
 bash research_scripts/run_stage.sh env
 ```
 
-Required outputs are `$RUN/environment.json` and `$RUN/environment_gate.json`. The gate verifies the pinned upstream commit, research revision marker, CUDA availability, recorded CUDA device/build, and imports of the repository's rasterizer and simple-knn extensions. It also hashes every Python source file plus `research_scripts/run_stage.sh` (or its source-tree `scripts/run_stage.sh` counterpart), `configs/controlled_protocol.json`, and every `requirements-*.txt` file. Downstream stages recompute both inventories and reject additions, removals, or changed bytes until `env` is rerun. Continue only when `environment_gate.json` has `passed: true`.
+Required outputs are `$RUN/environment.json` and `$RUN/environment_gate.json`. The gate verifies the pinned upstream commit, research revision marker, CUDA availability, recorded CUDA device/build, and imports of the repository's rasterizer and simple-knn extensions. It also hashes every Python source file plus `research_scripts/run_stage.sh`, `configs/controlled_protocol.json`, and every `requirements-*.txt` file. Downstream stages recompute both inventories and reject additions, removals, or changed bytes until `env` is rerun. Continue only when `environment_gate.json` has `passed: true`.
 
 ## 2. Source-track build, leakage audit, and coverage
 

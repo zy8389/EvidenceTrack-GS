@@ -17,7 +17,7 @@ class TrackPoint:
     """
     轨迹点数据结构
     
-    Represents a 2D trajectory point extracted from the GeoTrack-GS framework.
+    Represents a 2D trajectory point used by the EvidenceTrack-GS framework.
     Contains coordinate information, confidence scores, and optional feature descriptors.
     
     Requirements addressed: 1.2 - 2D trajectory points as geometric guidance

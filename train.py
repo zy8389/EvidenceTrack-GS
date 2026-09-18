@@ -72,6 +72,11 @@ from diffusion_guidance.pseudo_schedule import (
     pseudo_call_trace_sha256,
     pseudo_camera_pool_sha256,
 )
+from diffusion_guidance.run_status import (
+    fail_closed,
+    mark_training_invalid,
+    write_training_status,
+)
 from geometric_constraints.repaired_geometry import StrictGeometryManager
 
 
@@ -305,6 +310,7 @@ def training(dataset, opt, pipe, args):
         if int(opt.densify_until_iter) != 10000:
             raise RuntimeError("Controlled v2 freezes topology at 10k")
     tb_writer = prepare_output_and_logger(args)
+    write_training_status(args.model_path, status="RUNNING", stage="initialization")
     gaussians = GaussianModel(args)
     strict_geometry_enabled = bool(
         getattr(args, "strict_tracks", False)
@@ -568,31 +574,43 @@ def training(dataset, opt, pipe, args):
 
     strict_geometry = None
     if strict_geometry_enabled:
-        strict_geometry = StrictGeometryManager.from_path(
-            args.track_path,
-            scene.getTrainCameras(),
-            device=gaussians.get_xyz.device,
-            dtype=gaussians.get_xyz.dtype,
-            min_length=opt.strict_track_min_length,
-            min_quality=opt.strict_track_min_quality,
-            max_tracks=opt.strict_track_max_tracks,
-            huber_delta=opt.strict_track_huber_delta,
-            association_chunk_size=opt.strict_track_association_chunk_size,
-            max_association_distance_ratio=(
-                opt.strict_track_max_association_distance_ratio
+        strict_geometry = fail_closed(
+            args.model_path,
+            stage="strict_geometry_initialization",
+            operation=lambda: StrictGeometryManager.from_path(
+                args.track_path,
+                scene.getTrainCameras(),
+                device=gaussians.get_xyz.device,
+                dtype=gaussians.get_xyz.dtype,
+                min_length=opt.strict_track_min_length,
+                min_quality=opt.strict_track_min_quality,
+                max_tracks=opt.strict_track_max_tracks,
+                huber_delta=opt.strict_track_huber_delta,
+                association_chunk_size=opt.strict_track_association_chunk_size,
+                max_association_distance_ratio=(
+                    opt.strict_track_max_association_distance_ratio
+                ),
+                collision_warning_rate=opt.strict_track_collision_warning_rate,
             ),
-            collision_warning_rate=opt.strict_track_collision_warning_rate,
         )
         strict_geometry.store.leakage_audit().emit()
-        association_statistics = strict_geometry.associate(
-            gaussians.get_xyz, scene.cameras_extent
+        association_statistics = fail_closed(
+            args.model_path,
+            stage="strict_geometry_association",
+            operation=lambda: strict_geometry.associate(
+                gaussians.get_xyz, scene.cameras_extent
+            ),
         )
-        gradient_probe = strict_geometry.gradient_probe(
-            gaussians.get_xyz,
-            count=opt.strict_track_gradient_test_count,
-            offset=(
-                opt.strict_track_gradient_probe_offset_ratio
-                * scene.cameras_extent
+        gradient_probe = fail_closed(
+            args.model_path,
+            stage="strict_geometry_gradient_probe",
+            operation=lambda: strict_geometry.gradient_probe(
+                gaussians.get_xyz,
+                count=opt.strict_track_gradient_test_count,
+                offset=(
+                    opt.strict_track_gradient_probe_offset_ratio
+                    * scene.cameras_extent
+                ),
             ),
         )
         print(
@@ -651,10 +669,18 @@ def training(dataset, opt, pipe, args):
         if not smoke_passed:
             raise RuntimeError("Strict geometry gradient integrity gate failed")
         if opt.geometry_smoke_only:
+            write_training_status(
+                scene.model_path,
+                status="COMPLETED",
+                stage="geometry_smoke_complete",
+                iteration=int(opt.iterations),
+            )
             print(f"STRICT GEOMETRY SMOKE: PASS ({smoke_path})")
             return
 
-    # GeoTrack-GS: 初始化几何约束系统
+    # Legacy geometry constraints are retained for compatibility only.  They
+    # are fail-closed when explicitly enabled and are not used by the strict
+    # controlled protocol.
     constraint_system = None
     trajectory_manager = None
     reprojection_validator = None
@@ -664,7 +690,7 @@ def training(dataset, opt, pipe, args):
         and hasattr(args, 'enable_geometric_constraints')
         and args.enable_geometric_constraints
     ):
-        try:
+        def _initialize_legacy_constraints():
             from geometric_constraints import (
                 ConstraintConfig,
                 TrajectoryManagerImpl,
@@ -679,10 +705,17 @@ def training(dataset, opt, pipe, args):
                 constraint_config = ConstraintConfig()
 
             # 初始化轨迹管理器
-            if hasattr(args, 'track_path') and args.track_path and os.path.exists(args.track_path):
-                trajectory_manager = TrajectoryManagerImpl(constraint_config)
-                trajectories = trajectory_manager.load_trajectories(args.track_path)
-                print(f"[GeoTrack-GS] Loaded {len(trajectories)} trajectories from {args.track_path}")
+            if not getattr(args, "track_path", None) or not os.path.exists(args.track_path):
+                raise FileNotFoundError(
+                    f"Enabled geometric constraints require an existing track file: {args.track_path}"
+                )
+            trajectory_manager = TrajectoryManagerImpl(constraint_config)
+            trajectories = trajectory_manager.load_trajectories(args.track_path)
+            if not trajectories:
+                raise RuntimeError(
+                    f"Enabled geometric constraints loaded no trajectories from {args.track_path}"
+                )
+            print(f"[EvidenceTrack-GS] Loaded {len(trajectories)} trajectories from {args.track_path}")
 
             # 初始化约束引擎
             constraint_system = EnhancedConstraintEngine(constraint_config)
@@ -693,18 +726,23 @@ def training(dataset, opt, pipe, args):
                 report_dir=os.path.join(args.model_path, "validation_reports")
             )
 
-            print("[GeoTrack-GS] Geometric constraint system initialized successfully")
+            print("[EvidenceTrack-GS] Geometric constraint system initialized successfully")
+            return constraint_system, trajectory_manager, reprojection_validator
 
-        except Exception as e:
-            print(f"[GeoTrack-GS] Failed to initialize geometric constraints: {e}")
-            constraint_system = None
-            trajectory_manager = None
-            reprojection_validator = None
+        constraint_system, trajectory_manager, reprojection_validator = fail_closed(
+            args.model_path,
+            stage="legacy_constraint_initialization",
+            operation=_initialize_legacy_constraints,
+        )
 
     # 初始化几何正则化器
     geometry_regularizer = None
     if opt.geometry_reg_enabled:
-        geometry_regularizer = create_geometry_regularizer(opt)
+        geometry_regularizer = fail_closed(
+            args.model_path,
+            stage="geometry_regularizer_initialization",
+            operation=lambda: create_geometry_regularizer(opt),
+        )
         print(f"[Geometry Regularization] Initialized with weight={opt.geometry_reg_weight}, k_neighbors={opt.geometry_reg_k_neighbors}")
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -796,15 +834,20 @@ def training(dataset, opt, pipe, args):
             Ll1 =  l1_loss_mask(image, gt_image)
             loss = ((1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)))
 
-            # GeoTrack-GS: 计算几何约束损失
+            # Required geometry objectives must never silently become zero.
             geometric_constraint_loss = torch.tensor(0.0, device="cuda")
             constraint_result = None # 确保变量存在
             active_trajectories = [] # 确保变量存在
 
             strict_geometry_result = None
             if strict_geometry is not None and iteration >= opt.strict_track_start:
-                strict_geometry_result = strict_geometry.compute_loss(
-                    gaussians.get_xyz
+                strict_geometry_result = fail_closed(
+                    args.model_path,
+                    stage="strict_geometry_forward",
+                    iteration=iteration,
+                    operation=lambda: strict_geometry.compute_loss(
+                        gaussians.get_xyz
+                    ),
                 )
                 if opt.strict_track_warmup > 0:
                     strict_ramp = min(
@@ -823,55 +866,48 @@ def training(dataset, opt, pipe, args):
                     * strict_ramp
                 )
             elif constraint_system is not None and trajectory_manager is not None:
-                try:
+                def _compute_legacy_constraint_loss():
                     # 获取活跃轨迹
                     active_trajectories = trajectory_manager.get_active_trajectories()
-
-                    if len(active_trajectories) > 0:
-                        # 获取相机和高斯点
-                        cameras = scene.getTrainCameras()
-                        gaussian_points = gaussians.get_xyz
-
-                        # 计算自适应权重
-                        adaptive_weights = constraint_system.compute_adaptive_weights(
-                            active_trajectories,
-                            image_regions=image,
-                            iteration=iteration
+                    if not active_trajectories:
+                        raise RuntimeError(
+                            "Enabled geometric constraints have no active trajectories"
                         )
+                    cameras = scene.getTrainCameras()
+                    gaussian_points = gaussians.get_xyz
+                    constraint_system.compute_adaptive_weights(
+                        active_trajectories,
+                        image_regions=image,
+                        iteration=iteration,
+                    )
+                    constraint_result = constraint_system.compute_reprojection_constraints(
+                        active_trajectories, cameras, gaussian_points
+                    )
+                    multiscale_result = constraint_system.compute_multiscale_constraints(
+                        active_trajectories, cameras, scales=[1.0, 0.5, 0.25]
+                    )
+                    constraint_weight = getattr(args, 'geometric_constraint_weight', 0.1)
+                    if iteration < 1000:
+                        constraint_weight *= 0.1
+                    elif iteration < 5000:
+                        constraint_weight *= (0.1 + 0.9 * (iteration - 1000) / 4000)
+                    return (
+                        (constraint_result.loss_value + multiscale_result.loss_value)
+                        * constraint_weight,
+                        constraint_result,
+                        active_trajectories,
+                    )
 
-                        # 计算重投影约束
-                        constraint_result = constraint_system.compute_reprojection_constraints(
-                            active_trajectories,
-                            cameras,
-                            gaussian_points
-                        )
-
-                        # 计算多尺度约束
-                        multiscale_result = constraint_system.compute_multiscale_constraints(
-                            active_trajectories,
-                            cameras,
-                            scales=[1.0, 0.5, 0.25]
-                        )
-
-                        # 组合约束损失
-                        geometric_constraint_loss = (
-                            constraint_result.loss_value +
-                            multiscale_result.loss_value
-                        )
-
-                        # 应用动态权重调度
-                        constraint_weight = getattr(args, 'geometric_constraint_weight', 0.1)
-                        if iteration < 1000:
-                            constraint_weight *= 0.1  # 早期阶段降低权重
-                        elif iteration < 5000:
-                            constraint_weight *= (0.1 + 0.9 * (iteration - 1000) / 4000)  # 逐渐增加
-
-                        geometric_constraint_loss *= constraint_weight
-
-                except Exception as e:
-                    if iteration % 100 == 0:  # 避免过多日志
-                        print(f"[GeoTrack-GS] Warning: Constraint computation failed at iteration {iteration}: {e}")
-                    geometric_constraint_loss = torch.tensor(0.0, device="cuda")
+                (
+                    geometric_constraint_loss,
+                    constraint_result,
+                    active_trajectories,
+                ) = fail_closed(
+                    args.model_path,
+                    stage="legacy_constraint_forward",
+                    iteration=iteration,
+                    operation=_compute_legacy_constraint_loss,
+                )
 
             # 深度损失计算
             rendered_depth = render_pkg["depth"][0]
@@ -884,28 +920,28 @@ def training(dataset, opt, pipe, args):
                                  (1 - pearson_corrcoef(1 / (midas_depth + 200.), rendered_depth))
             )
 
-            # GeoTrack-GS: 可选择性地禁用深度损失（用于消融实验）
+            # The legacy depth loss remains an explicit ablation switch.
             if not getattr(args, 'disable_depth_loss', False):
                 loss += opt.depth_weight * depth_loss
 
-            # GeoTrack-GS: 添加几何约束损失
+            # Add the required geometry objective.
             loss += geometric_constraint_loss
 
             # 添加几何正则化损失
             geometry_reg_loss = torch.tensor(0.0, device="cuda")
             if geometry_regularizer is not None:
-                try:
-                    geometry_reg_loss = geometry_regularizer.compute_anisotropic_regularization_loss(
+                geometry_reg_loss = fail_closed(
+                    args.model_path,
+                    stage="geometry_regularizer_forward",
+                    iteration=iteration,
+                    operation=lambda: geometry_regularizer.compute_anisotropic_regularization_loss(
                         xyz=gaussians.get_xyz,
                         scaling=gaussians.get_scaling,
                         rotation=gaussians.get_rotation,
                         iteration=iteration
-                    )
-                    loss += geometry_reg_loss
-                except Exception as e:
-                    if iteration % 1000 == 0:  # 降低日志频率
-                        print(f"[Geometry Regularization] Warning: Failed at iteration {iteration}: {e}")
-                    geometry_reg_loss = torch.tensor(0.0, device="cuda")
+                    ),
+                )
+                loss += geometry_reg_loss
 
             # 伪相机渲染损失
             if (
@@ -1094,10 +1130,10 @@ def training(dataset, opt, pipe, args):
                                 "tracks/gradient_zero_ratio", 1.0 - coverage, iteration
                             )
 
-            # GeoTrack-GS: 几何约束验证和日志记录
+            # Legacy validation is also required when the legacy constraint path is enabled.
             if (constraint_system is not None and reprojection_validator is not None and
                 iteration % 100 == 0):  # 每100次迭代验证一次
-                try:
+                def _validate_legacy_constraints():
                     # 验证几何约束
                     if constraint_result is not None:
                         # 已修复: 传入了正确的参数并解包了返回值
@@ -1119,14 +1155,17 @@ def training(dataset, opt, pipe, args):
                             tb_writer.add_scalar('geometric_constraints/constraint_loss',
                                                  geometric_constraint_loss.item(), iteration)
 
-                        # 如果约束验证失败，记录警告
+                        # A low satisfaction score is a diagnostic result, not
+                        # a hidden fallback; the computed loss remains active.
                         if not is_valid:
-                            print(f"[GeoTrack-GS] Warning: Constraint validation failed at iteration {iteration}. "
+                            print(f"[EvidenceTrack-GS] Warning: Constraint validation failed at iteration {iteration}. "
                                   f"Satisfaction: {validation_metrics.constraint_satisfaction:.3f}")
-
-                except Exception as e:
-                    if iteration % 500 == 0:  # 减少错误日志频率
-                        print(f"[GeoTrack-GS] Warning: Validation failed at iteration {iteration}: {e}")
+                fail_closed(
+                    args.model_path,
+                    stage="legacy_constraint_validation",
+                    iteration=iteration,
+                    operation=_validate_legacy_constraints,
+                )
 
             # Log and save
             # Task: 确保与现有SH系数的兼容性 - Add GT-DCA performance logging
@@ -1219,6 +1258,12 @@ def training(dataset, opt, pipe, args):
 
     with open(os.path.join(scene.model_path, "real_view_sequence.json"), "w", encoding="utf-8") as handle:
         json.dump(real_view_audit, handle)
+    write_training_status(
+        scene.model_path,
+        status="COMPLETED",
+        stage="training_complete",
+        iteration=int(opt.iterations),
+    )
 
 
 def prepare_output_and_logger(args):
@@ -1249,7 +1294,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, testing_iterations
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
-        # GeoTrack-GS: 记录几何约束损失
+        # Record the geometry objective.
         if geometric_constraint_loss is not None:
             tb_writer.add_scalar('train_loss_patches/geometric_constraint_loss', geometric_constraint_loss.item(), iteration)
 
@@ -1360,13 +1405,18 @@ if __name__ == "__main__":
 
     print(args.test_iterations)
 
-    # GeoTrack-GS: 设置几何约束配置 (此部分逻辑可被上面直接添加的参数替代，但为保持结构完整性而保留)
+    # Validate explicit legacy geometry configuration before starting training.
     if hasattr(args, 'enable_geometric_constraints') and args.enable_geometric_constraints:
         if not setup_geometric_constraints_config(args):
-            print("Failed to setup geometric constraints configuration. Exiting.")
-            sys.exit(1)
+            error = RuntimeError("Failed to set up enabled geometric constraints")
+            mark_training_invalid(
+                args.model_path,
+                stage="constraint_configuration",
+                error=error,
+            )
+            raise error
 
-        # GeoTrack-GS: 打印配置摘要
+        # Print the explicit legacy configuration for the run record.
         print_geometric_constraints_summary(args)
 
     # Task: 添加GT-DCA启用/禁用的配置选项
@@ -1414,7 +1464,11 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     # network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args)
+    try:
+        training(lp.extract(args), op.extract(args), pp.extract(args), args)
+    except Exception as exc:
+        mark_training_invalid(args.model_path, stage="training", error=exc)
+        raise
 
     # All done
     print("\nTraining complete.")

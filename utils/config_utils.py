@@ -1,8 +1,4 @@
-"""
-GeoTrack-GS 配置管理工具
-
-提供配置文件的加载、验证和管理功能
-"""
+"""EvidenceTrack-GS configuration loading and validation helpers."""
 
 import json
 import os
@@ -92,12 +88,12 @@ class ConfigValidator:
                 return False
         
         # 检查轨迹文件
-        if (hasattr(args, 'enable_geometric_constraints') and args.enable_geometric_constraints and
-            hasattr(args, 'track_path') and args.track_path):
-            if not os.path.exists(args.track_path):
-                print(f"Warning: Track file not found: {args.track_path}")
-                print("Geometric constraints will be disabled.")
-                args.enable_geometric_constraints = False
+        if getattr(args, 'enable_geometric_constraints', False):
+            track_path = getattr(args, 'track_path', '')
+            if not track_path or not os.path.exists(track_path):
+                print(f"Error: Track file not found: {track_path}")
+                print("Geometric constraints remain enabled; refusing a silent fallback.")
+                return False
         
         return True
 
@@ -292,7 +288,10 @@ def setup_geometric_constraints_config(args: Namespace) -> bool:
         config = None
         if hasattr(args, 'constraint_config_path') and args.constraint_config_path:
             config = ConfigManager.load_constraint_config(args.constraint_config_path)
-        
+            if config is None:
+                print("Explicit geometric constraints configuration could not be loaded.")
+                return False
+
         # 如果没有配置文件，使用默认配置
         if config is None:
             config = ConfigManager.create_default_constraint_config()

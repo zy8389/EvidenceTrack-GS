@@ -87,7 +87,7 @@ def huber_loss(error: torch.Tensor, delta: float = 1.0):
     return 0.5 * quadratic ** 2 + delta * linear
 
 
-# --- GeoTrack-GS 几何约束模块 ---
+# --- EvidenceTrack-GS legacy geometry helpers ---
 
 def reprojection_loss(
         gaussians,
@@ -97,7 +97,8 @@ def reprojection_loss(
 ):
     """
     计算全局重投影一致性损失 L_reproj。
-    这是GeoTrack-GS的核心强约束。
+    这是兼容旧训练入口的重投影约束 helper；正式 protocol 使用
+    ``geometric_constraints.repaired_geometry.StrictGeometryManager``。
     """
     if anchors_3d.shape[0] == 0:
         return torch.tensor(0.0, device="cuda")
@@ -390,7 +391,6 @@ def outlier_robust_loss(
     total_loss = inlier_weight * inlier_loss + outlier_weight * outlier_loss
     
     return total_loss
-
 
 
 
