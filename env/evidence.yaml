@@ -1,0 +1,11 @@
+name: evidencetrack-evidence
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - -r env/requirements-evidence.txt
+      - -r env/requirements-cpu.txt

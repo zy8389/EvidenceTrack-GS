@@ -5,7 +5,7 @@
 # All rights reserved.
 #
 # This software is free for non-commercial, research and evaluation use
-# under the terms of the LICENSE.md file.
+# under the terms of the LICENSE file.
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
@@ -1145,14 +1145,14 @@ def training(dataset, opt, pipe, args):
 
                         # 记录验证指标到tensorboard
                         if tb_writer:
-                            tb_writer.add_scalar('geometric_constraints/constraint_satisfaction',
+                            tb_writer.add_scalar('evidence_track/geometry/constraint_satisfaction',
                                                  validation_metrics.constraint_satisfaction, iteration)
-                            tb_writer.add_scalar('geometric_constraints/geometric_consistency',
+                            tb_writer.add_scalar('evidence_track/geometry/geometric_consistency',
                                                  validation_metrics.geometric_consistency, iteration)
                             # 已修复: 从 constraint_result 获取平均误差
-                            tb_writer.add_scalar('geometric_constraints/reprojection_error_mean',
+                            tb_writer.add_scalar('evidence_track/geometry/reprojection_error_mean',
                                                  constraint_result.mean_error, iteration)
-                            tb_writer.add_scalar('geometric_constraints/constraint_loss',
+                            tb_writer.add_scalar('evidence_track/geometry/constraint_loss',
                                                  geometric_constraint_loss.item(), iteration)
 
                         # A low satisfaction score is a diagnostic result, not

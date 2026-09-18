@@ -1,6 +1,7 @@
 {
   "revision": "research-v2",
   "integration_contract": "pre_ast_patch_plus_overlay_then_guarded_ast_v5",
+  "upstream_commit": "81ada6a32c918591ae7c7a0279dc6ca7a8018e2f",
   "changed_files": [
     "scene\\gaussian_model.py",
     "train.py",

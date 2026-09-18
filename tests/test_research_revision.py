@@ -17,7 +17,7 @@ from tools.aggregate_results import paired_bootstrap, filter_by_role
 from tools.paired_evidence_report import analyze,VARIANTS
 from tools.smoke_test_phase2_1 import camera,observation_for
 integration_path = ROOT/'scripts/apply_integration_fixes.py'
-if not integration_path.exists(): integration_path = ROOT/'research_scripts/apply_integration_fixes.py'
+if not integration_path.exists(): integration_path = ROOT/'scripts/apply_integration_fixes.py'
 spec=importlib.util.spec_from_file_location('integration',integration_path)
 integration=importlib.util.module_from_spec(spec);spec.loader.exec_module(integration)
 
