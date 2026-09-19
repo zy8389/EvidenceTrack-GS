@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from diffusion_guidance.calibration_guard import resized_intrinsics
 from geometric_constraints.repaired_geometry import project_points_pixel
+from tools import check_camera_projection_equivalence as projection_gate
 from tools.check_camera_projection_equivalence import compare_camera, direct_projection
 
 
@@ -85,3 +87,39 @@ def test_matrix_mismatch_fails_equivalence_record():
     records = compare_camera(points, camera, k, tolerance=1e-8, matrix_tolerance=1e-8)
     assert not records[0]["passed"]
     assert records[0]["homogeneous_row_max_abs_difference"] > 1e-8
+
+
+def test_projection_cli_accepts_run_stage_dataset_selectors(tmp_path, monkeypatch):
+    track_path = tmp_path / "tracks.h5"
+    output_path = tmp_path / "projection.json"
+    captured = {}
+
+    def fake_run(args):
+        captured["data_type"] = args.data_type
+        captured["llff_holdout"] = args.llff_holdout
+        return {"passed": True}
+
+    monkeypatch.setattr(projection_gate, "run", fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "check_camera_projection_equivalence.py",
+            "--track-h5",
+            str(track_path),
+            "--track_path",
+            str(track_path),
+            "--output",
+            str(output_path),
+            "--data_type",
+            "colmap",
+            "--llff_holdout",
+            "8",
+            "--strict_source_only_geometry",
+        ],
+    )
+
+    projection_gate.main()
+
+    assert captured == {"data_type": "colmap", "llff_holdout": 8}
+    assert json.loads(output_path.read_text(encoding="utf-8"))["passed"] is True

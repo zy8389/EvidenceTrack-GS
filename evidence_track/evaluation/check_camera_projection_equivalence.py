@@ -185,6 +185,10 @@ def main():
     parser.add_argument("--max-matrix-error", type=float, default=1e-6)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--quiet", action="store_true")
+    # Scene consumes these run-stage dataset selectors directly. They are not
+    # part of upstream ModelParams, so every Scene-based gate must declare them.
+    parser.add_argument("--data_type", default="colmap", choices=["colmap", "360"])
+    parser.add_argument("--llff_holdout", type=int, default=8)
     known, _ = parser.parse_known_args()
     if known.max_pixel_error <= 0 or known.max_pixel_error > 1e-3:
         parser.error("--max-pixel-error must be a precommitted positive numerical tolerance <= 1e-3 px")
