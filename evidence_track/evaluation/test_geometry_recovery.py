@@ -354,10 +354,12 @@ def main() -> None:
     if known.synthetic_smoke:
         report = run_synthetic(known.steps)
     else:
-        from arguments import ModelParams, OptimizationParams
+        from arguments import ModelParams, OptimizationParams, PipelineParams
 
         ModelParams(parser)
+        PipelineParams(parser)
         OptimizationParams(parser)
+        parser.add_argument("--train_bg", action="store_true")
         parser.add_argument("--data_type", default="colmap")
         parser.add_argument("--llff_holdout", type=int, default=8)
         args = parser.parse_args()
