@@ -194,8 +194,10 @@ def main():
         parser.error("--max-pixel-error must be a precommitted positive numerical tolerance <= 1e-3 px")
     if known.max_matrix_error <= 0 or known.max_matrix_error > 1e-5:
         parser.error("--max-matrix-error must be a precommitted positive tolerance <= 1e-5")
-    from arguments import ModelParams as UpstreamModelParams
+    from arguments import ModelParams as UpstreamModelParams, PipelineParams
     UpstreamModelParams(parser)
+    PipelineParams(parser)
+    parser.add_argument("--train_bg", action="store_true")
     args = parser.parse_args()
     if not args.strict_source_only_geometry:
         parser.error("P0 gate requires --strict_source_only_geometry")

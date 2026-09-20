@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import subprocess
 
-from arguments import ModelParams, get_combined_args
+from arguments import ModelParams, PipelineParams
 from diffusion_guidance.calibration_guard import calibrate_scene
 from scene import GaussianModel, Scene
 from evidence_track.evaluation.audit_pseudo_camera_manifest import audit_live_scene
@@ -21,13 +21,17 @@ PINNED_UPSTREAM_COMMIT = "81ada6a32c918591ae7c7a0279dc6ca7a8018e2f"
 def main() -> None:
     parser = ArgumentParser()
     ModelParams(parser, sentinel=True)
+    PipelineParams(parser)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--data_type", default="colmap", choices=["colmap", "360"])
     parser.add_argument("--llff_holdout", type=int, default=8)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--use_gt_dca", action="store_true")
-    args = get_combined_args(parser)
+    parser.add_argument("--train_bg", action="store_true")
+    # This gate always creates a fresh scratch model directory, so there is no
+    # prior cfg_args file to merge. Parse the explicit protocol arguments only.
+    args = parser.parse_args()
     if not args.strict_source_only_geometry:
         parser.error("Live pseudo-camera gate requires --strict_source_only_geometry")
     if not args.track_path:

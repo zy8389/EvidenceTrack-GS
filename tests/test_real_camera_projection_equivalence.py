@@ -97,6 +97,8 @@ def test_projection_cli_accepts_run_stage_dataset_selectors(tmp_path, monkeypatc
     def fake_run(args):
         captured["data_type"] = args.data_type
         captured["llff_holdout"] = args.llff_holdout
+        captured["use_color"] = args.use_color
+        captured["train_bg"] = args.train_bg
         return {"passed": True}
 
     monkeypatch.setattr(projection_gate, "run", fake_run)
@@ -121,5 +123,10 @@ def test_projection_cli_accepts_run_stage_dataset_selectors(tmp_path, monkeypatc
 
     projection_gate.main()
 
-    assert captured == {"data_type": "colmap", "llff_holdout": 8}
+    assert captured == {
+        "data_type": "colmap",
+        "llff_holdout": 8,
+        "use_color": True,
+        "train_bg": False,
+    }
     assert json.loads(output_path.read_text(encoding="utf-8"))["passed"] is True
