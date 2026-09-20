@@ -20,7 +20,7 @@ PINNED_UPSTREAM_COMMIT = "81ada6a32c918591ae7c7a0279dc6ca7a8018e2f"
 
 def main() -> None:
     parser = ArgumentParser()
-    ModelParams(parser, sentinel=True)
+    ModelParams(parser)
     PipelineParams(parser)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--data_type", default="colmap", choices=["colmap", "360"])

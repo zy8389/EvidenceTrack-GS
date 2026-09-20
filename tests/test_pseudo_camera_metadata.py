@@ -117,6 +117,7 @@ def test_live_pseudo_cli_bootstraps_a_fresh_scene(tmp_path, monkeypatch):
         captured.update(
             data_type=args.data_type,
             llff_holdout=args.llff_holdout,
+            resolution=args.resolution,
             use_color=args.use_color,
             train_bg=args.train_bg,
         )
@@ -162,6 +163,7 @@ def test_live_pseudo_cli_bootstraps_a_fresh_scene(tmp_path, monkeypatch):
     assert captured == {
         "data_type": "colmap",
         "llff_holdout": 8,
+        "resolution": -1,
         "use_color": True,
         "train_bg": False,
     }
