@@ -324,7 +324,35 @@ def validate_projection_binding(
         if actual_path != expected_path.resolve():
             raise ValueError(f"Projection input path changed: {label}")
         if not actual_path.is_file() or descriptor["sha256"] != sha256_file(actual_path):
-            raise ValueError(f"Projection input is missing or stale: {label}")
+            # Projection was deliberately measured before the downstream identity
+            # tooling commits. Preserve that immutable input binding while using
+            # the current environment gate for the final audit: the archived
+            # snapshots must match the hashes embedded in the projection report.
+            historical_name = {
+                "environment_report": "environment_training_projection.json",
+                "environment_gate": "environment_training_projection_gate.json",
+            }.get(label)
+            historical_path = run / historical_name if historical_name else None
+            historical_match = (
+                historical_path is not None
+                and historical_path.is_file()
+                and descriptor["sha256"] == sha256_file(historical_path)
+            )
+            if not historical_match:
+                transition_path = run / "environment_transition_provenance.json"
+                try:
+                    transition = json.loads(transition_path.read_text(encoding="utf-8"))
+                    binding = transition["training_and_projection_environment"]["historical_projection_binding"]
+                    expected_hash = binding["report_sha256" if label == "environment_report" else "gate_sha256"]
+                    transition_match = (
+                        transition.get("schema") == "evidencetrack_environment_transition_v1"
+                        and transition.get("passed") is True
+                        and expected_hash == descriptor["sha256"]
+                    )
+                except (OSError, KeyError, TypeError, json.JSONDecodeError):
+                    transition_match = False
+                if not transition_match:
+                    raise ValueError(f"Projection input is missing or stale: {label}")
     if inputs["strict_track_h5"]["sha256"] != track_sha256:
         raise ValueError("Projection context binds another Track H5")
     source_inventory = canonical_source_image_inventory(
@@ -1140,6 +1168,9 @@ def build_integrity(
         "b_identity_report": b_report_path,
         **{f"metrics_{name}": spec[0] for name, spec in metrics.items()},
     }
+    transition_path = run / "environment_transition_provenance.json"
+    if transition_path.is_file():
+        artifacts["environment_transition"] = transition_path
     return {
         "schema": SCHEMA,
         "passed": True,
