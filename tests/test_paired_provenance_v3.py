@@ -248,3 +248,30 @@ def test_paired_v3_protocol_is_recomputed_from_difix_metadata(
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
     with pytest.raises(ValueError, match="stale or fabricated"):
         evidence.validate_paired_manifest_metadata(paired, "A1")
+
+
+def test_paired_arm_asset_uses_arm_path_when_shared_bytes_match(tmp_path: Path) -> None:
+    a1_asset = _write(tmp_path / "a1" / "reference.png", "shared-bytes\n")
+    b_asset = _write(tmp_path / "b" / "reference.png", "shared-bytes\n")
+    digest = sha256_file(a1_asset)
+    paired_record = {
+        "reference_image": str(a1_asset),
+        "reference_image_sha256": digest,
+    }
+    evidence_record = {
+        "reference_image": str(b_asset),
+        "reference_image_sha256": digest,
+    }
+
+    assert evidence._paired_arm_asset_path(
+        evidence_record, paired_record, "reference_image", "reference_image_sha256"
+    ) == str(b_asset)
+
+    evidence_record["reference_image_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="shared hash mismatch"):
+        evidence._paired_arm_asset_path(
+            evidence_record,
+            paired_record,
+            "reference_image",
+            "reference_image_sha256",
+        )

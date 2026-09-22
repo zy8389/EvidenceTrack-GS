@@ -94,6 +94,19 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _paired_arm_asset_path(
+    evidence_record: dict, paired_record: dict, field: str, hash_field: str
+) -> str:
+    evidence_path = Path(str(evidence_record[field])).expanduser().resolve()
+    evidence_digest = evidence_record.get(hash_field)
+    paired_digest = paired_record.get(hash_field)
+    if evidence_digest != paired_digest:
+        raise ValueError(f"Paired identity shared hash mismatch for {field}")
+    if not evidence_path.is_file() or sha256_file(evidence_path) != evidence_digest:
+        raise ValueError(f"Paired identity arm asset is missing or stale: {field}")
+    return str(evidence_path)
+
+
 def _validate_evidence_difix(
     record: dict, cache_record: dict, run_metadata: dict
 ) -> dict:
@@ -834,10 +847,18 @@ def load_paired_target_manifest(
                     resolve_path(path.parent, raw[f"{arm}_difix_output"])
                 ),
                 "difix_output_sha256": raw[f"{arm}_difix_output_sha256"],
-                "reference_image": str(
-                    resolve_path(path.parent, raw["reference_image"])
+                "reference_image": _paired_arm_asset_path(
+                    evidence_by_arm[arm][image_name],
+                    raw,
+                    "reference_image",
+                    "reference_image_sha256",
                 ),
-                "real_target": str(resolve_path(path.parent, raw["real_target"])),
+                "real_target": _paired_arm_asset_path(
+                    evidence_by_arm[arm][image_name],
+                    raw,
+                    "real_target",
+                    "real_target_sha256",
+                ),
                 "gs_render_sha256": raw[f"{arm}_render_sha256"],
                 "reference_image_sha256": raw["reference_image_sha256"],
                 "real_target_sha256": raw["real_target_sha256"],
