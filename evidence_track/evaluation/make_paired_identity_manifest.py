@@ -110,6 +110,18 @@ def _one_value(records: list[dict[str, Any]], field: str, label: str) -> Any:
     return values[0]
 
 
+def _require_shared_heldout_support(left: dict, right: dict, image_name: str) -> None:
+    shared_fields = (
+        "camera",
+        "camera_fingerprint",
+        "real_target_sha256",
+        "reference_image_sha256",
+    )
+    for field in shared_fields:
+        if left.get(field) != right.get(field):
+            raise ValueError(f"A1/B {field} mismatch for {image_name}")
+
+
 def read_records(path: Path, *, arm: str) -> tuple[dict[str, dict], dict[str, Any]]:
     path = path.expanduser().resolve()
     rows = _read_jsonl(path)
@@ -508,16 +520,7 @@ def main() -> None:
     rows = []
     for image_name in sorted(a1):
         left, right = a1[image_name], b[image_name]
-        for field in (
-            "camera",
-            "camera_fingerprint",
-            "real_target",
-            "real_target_sha256",
-            "reference_image",
-            "reference_image_sha256",
-        ):
-            if left[field] != right[field]:
-                raise ValueError(f"A1/B {field} mismatch for {image_name}")
+        _require_shared_heldout_support(left, right, image_name)
         for label, record in (("A1", left), ("B", right)):
             if (
                 int(record["checkpoint_iteration"]) != 12000

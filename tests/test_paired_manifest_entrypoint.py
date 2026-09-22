@@ -130,3 +130,49 @@ def test_read_records_binds_the_resolved_final_checkpoint(
         "validate_difix_target",
         lambda **kwargs: {"output_sha256": _sha256(difix_output)},
     )
+    final_bindings: list[tuple[str, Path]] = []
+    monkeypatch.setattr(
+        paired,
+        "require_final_checkpoint_binding",
+        lambda summary, audit, *, method, checkpoint_path: final_bindings.append(
+            (method, Path(checkpoint_path).resolve())
+        ),
+    )
+
+    records, context = paired.read_records(evidence_manifest, arm="A1")
+
+    assert list(records) == ["heldout_1"]
+    assert Path(context["checkpoint"]) == checkpoint
+    assert final_bindings == [("A1", checkpoint)]
+
+
+def test_paired_support_accepts_distinct_paths_only_for_identical_bytes() -> None:
+    left = {
+        "camera": {"width": 8, "height": 6},
+        "camera_fingerprint": "heldout-fixture",
+        "real_target": "/evidence_a1/real.png",
+        "real_target_sha256": "a" * 64,
+        "reference_image": "/evidence_a1/reference.png",
+        "reference_image_sha256": "b" * 64,
+    }
+    right = {
+        **left,
+        "real_target": "/evidence_b/real.png",
+        "reference_image": "/evidence_b/reference.png",
+    }
+
+    paired._require_shared_heldout_support(left, right, "heldout_1")
+
+    right["real_target_sha256"] = "c" * 64
+    with pytest.raises(ValueError, match="real_target_sha256"):
+        paired._require_shared_heldout_support(left, right, "heldout_1")
+
+    right["real_target_sha256"] = left["real_target_sha256"]
+    right["reference_image_sha256"] = "d" * 64
+    with pytest.raises(ValueError, match="reference_image_sha256"):
+        paired._require_shared_heldout_support(left, right, "heldout_1")
+
+    right["reference_image_sha256"] = left["reference_image_sha256"]
+    right["camera_fingerprint"] = "different-camera"
+    with pytest.raises(ValueError, match="camera_fingerprint"):
+        paired._require_shared_heldout_support(left, right, "heldout_1")
