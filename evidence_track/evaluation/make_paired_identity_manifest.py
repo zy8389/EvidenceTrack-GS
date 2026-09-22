@@ -294,7 +294,7 @@ def read_records(path: Path, *, arm: str) -> tuple[dict[str, dict], dict[str, An
         final_checkpoint_summary,
         pair_audit,
         method=arm,
-        checkpoint_path=checkpoint_path,
+        checkpoint_path=Path(context["checkpoint"]),
     )
     if context["checkpoint_controlled_provenance_sha256"] != final_checkpoint_summary[
         "controlled_provenance_sha256"
