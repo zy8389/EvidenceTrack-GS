@@ -7,7 +7,13 @@ import json
 from pathlib import Path
 
 from .manifest import load_parent_manifest
-from .partition import build_balanced_partition, validate_partition, write_group_manifests, write_partition
+from .partition import (
+    build_balanced_partition,
+    validate_partition,
+    write_group_manifests,
+    write_group_manifests_reusing_partition,
+    write_partition,
+)
 from .schedule import build_group_schedule, write_group_schedule
 
 
@@ -57,6 +63,39 @@ def _validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _materialize(args: argparse.Namespace) -> int:
+    parent = load_parent_manifest(
+        args.manifest,
+        expected_count=args.expected_count,
+        expected_sha256=args.expected_sha256,
+        require_files=args.require_files,
+    )
+    partition = json.loads(Path(args.partition).read_text(encoding="utf-8"))
+    validate_partition(
+        partition,
+        parent_records=parent,
+        expected_group_count=args.groups,
+        expected_group_size=args.group_size,
+    )
+    paths = write_group_manifests_reusing_partition(
+        parent,
+        partition,
+        args.output_dir,
+    )
+    print(
+        json.dumps(
+            {
+                "passed": True,
+                "parent_manifest_sha256": parent.sha256,
+                "partition_sha256": partition["partition_sha256"],
+                "groups": {key: str(value) for key, value in paths.items()},
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -73,6 +112,16 @@ def build_parser() -> argparse.ArgumentParser:
     partition.add_argument("--group-size", type=int, default=8)
     partition.add_argument("--seed", type=int, default=0)
     partition.set_defaults(func=_partition)
+    materialize = subparsers.add_parser(
+        "materialize-reused-partition",
+        parents=[common],
+        help="materialize a second target-kind parent using an existing camera partition",
+    )
+    materialize.add_argument("--partition", required=True, type=Path)
+    materialize.add_argument("--output-dir", required=True, type=Path)
+    materialize.add_argument("--groups", type=int, default=4)
+    materialize.add_argument("--group-size", type=int, default=8)
+    materialize.set_defaults(func=_materialize)
     return parser
 
 
@@ -83,4 +132,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

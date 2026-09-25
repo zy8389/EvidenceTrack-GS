@@ -17,6 +17,7 @@ from tools.group_utility.partition import (
     build_balanced_partition,
     validate_partition,
     write_group_manifests,
+    write_group_manifests_reusing_partition,
     write_partition,
 )
 from tools.group_utility.schedule import (
@@ -94,6 +95,34 @@ def test_group_manifests_and_partition_hashes(tmp_path: Path):
         assert group_parent.sha256 == metadata["group_manifest_sha256"]
         assert metadata["group_id"] == group_id
         assert metadata["partition_sha256"] == partition.partition_sha256
+
+
+def test_secondary_target_parent_reuses_camera_partition(tmp_path: Path):
+    difix_root = tmp_path / "difix"
+    difix_root.mkdir()
+    _, difix_parent = _parent(difix_root)
+    partition = build_balanced_partition(difix_parent, seed=0)
+
+    self_root = tmp_path / "self"
+    self_root.mkdir()
+    self_records = _records(self_root)
+    for record in self_records:
+        record["supervision_target_kind"] = "self_render_a0"
+    self_manifest_path = self_root / "parent.jsonl"
+    write_jsonl(self_manifest_path, self_records)
+    self_parent = load_parent_manifest(self_manifest_path, require_files=True)
+
+    output = tmp_path / "self_group_artifacts"
+    paths = write_group_manifests_reusing_partition(self_parent, partition, output)
+    assert set(paths) == {"group_00", "group_01", "group_02", "group_03"}
+    for group_id, path in paths.items():
+        group_parent = load_parent_manifest(path, expected_count=8, require_files=True)
+        metadata = json.loads((path.parent / "manifest_metadata.json").read_text(encoding="utf-8"))
+        assert group_parent.sha256 == metadata["group_manifest_sha256"]
+        assert metadata["parent_manifest_sha256"] == self_parent.sha256
+        assert metadata["partition_parent_manifest_sha256"] == difix_parent.sha256
+        assert metadata["partition_sha256"] == partition.partition_sha256
+        assert {record["supervision_target_kind"] for record in group_parent.records} == {"self_render_a0"}
 
 
 def test_group_schedule_is_39_call_round_robin_with_4_5_exposures():

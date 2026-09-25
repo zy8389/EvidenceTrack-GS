@@ -313,3 +313,72 @@ def write_group_manifests(
         )
         result[group_id] = manifest_path
     return result
+
+
+def write_group_manifests_reusing_partition(
+    parent: ParentManifest,
+    partition: GroupPartition | Mapping[str, Any] | str | Path,
+    output_dir: str | Path,
+) -> dict[str, Path]:
+    """Materialize a second target-kind parent using an existing camera partition.
+
+    A utility pilot commonly has two byte-different 32-view parents (for
+    example ``difix`` and ``self_render_a0``) that must share exactly the same
+    camera assignment.  The partition itself remains bound to the discovery
+    parent that created it, while this function validates only the immutable
+    camera identities and parent indices against the second parent.  The
+    emitted metadata records both hashes so the distinction is auditable.
+    """
+
+    if isinstance(partition, (str, Path)):
+        with Path(partition).open("r", encoding="utf-8") as handle:
+            partition = json.load(handle)
+    value = partition.to_dict() if isinstance(partition, GroupPartition) else dict(partition)
+    validate_partition(
+        value,
+        parent_records=parent,
+        expected_group_count=int(value.get("group_count", 4)),
+        expected_group_size=int(value.get("group_size", 8)),
+    )
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    result: dict[str, Path] = {}
+    records_by_index = {index: record for index, record in enumerate(parent.records)}
+    for group in value["groups"]:
+        group_id = str(group["group_id"])
+        group_dir = root / group_id
+        group_dir.mkdir(parents=True, exist_ok=True)
+        records = []
+        for member in group["members"]:
+            record = copy.deepcopy(records_by_index[int(member["parent_index"])])
+            for field in (
+                "input", "input_path", "gs_render", "target", "target_path",
+                "pseudo_target", "reference_image", "reference", "ref", "mask",
+            ):
+                item = record.get(field)
+                if item and not Path(str(item)).expanduser().is_absolute():
+                    source = (parent.path.parent / str(item)).resolve()
+                    record[field] = os.path.relpath(source, group_dir)
+            records.append(record)
+        manifest_path = group_dir / "manifest.jsonl"
+        digest = write_jsonl(manifest_path, records)
+        metadata = {
+            "schema": GROUP_MANIFEST_SCHEMA,
+            "group_id": group_id,
+            "group_index": int(group["group_index"]),
+            "group_size": int(group["count"]),
+            "parent_manifest_sha256": parent.sha256,
+            "partition_parent_manifest_sha256": value["parent_manifest_sha256"],
+            "partition_sha256": value["partition_sha256"],
+            "group_manifest_sha256": digest,
+            "camera_keys": list(group["camera_keys"]),
+            "camera_fingerprints": list(group["camera_fingerprints"]),
+            "source_manifest": parent.path.name,
+            "partition_reuse": "camera_identity_partition_v1",
+        }
+        (group_dir / "manifest_metadata.json").write_text(
+            json.dumps(metadata, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        result[group_id] = manifest_path
+    return result
