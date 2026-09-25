@@ -76,7 +76,7 @@ def _as_bool(value: Any) -> bool:
 
 
 def record_is_heldout(record: Mapping[str, Any]) -> bool:
-    for field in ("is_heldout", "heldout", "held_out", "is_held_out"):
+    for field in ("is_heldout", "heldout", "held_out", "is_held_out", "uses_heldout_pose_information"):
         if field in record and _as_bool(record[field]):
             return True
     for field in ("split", "pose_split", "camera_role", "role"):
@@ -223,4 +223,3 @@ def write_jsonl(path: str | Path, records: Iterable[Mapping[str, Any]]) -> str:
         for record in records:
             handle.write(canonical_json(dict(record)) + "\n")
     return sha256_file(destination)
-

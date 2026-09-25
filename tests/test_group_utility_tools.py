@@ -127,6 +127,13 @@ def test_duplicate_key_and_heldout_fail_closed(tmp_path: Path):
     with pytest.raises(ValueError, match="held-out camera"):
         load_parent_manifest(path)
 
+    records = _records(tmp_path)
+    records[4]["uses_heldout_pose_information"] = True
+    path = tmp_path / "heldout_pose_flag.jsonl"
+    write_jsonl(path, records)
+    with pytest.raises(ValueError, match="held-out camera"):
+        load_parent_manifest(path)
+
 
 def test_wrong_parent_hash_and_changed_asset_fail_closed(tmp_path: Path):
     manifest_path, parent = _parent(tmp_path)
